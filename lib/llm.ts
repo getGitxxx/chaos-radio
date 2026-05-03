@@ -41,13 +41,15 @@ export async function callLLM(
       { role: 'user', content: userMessage },
     ];
     // Implement timeout-aware LLM call using Promise.race for broad compatibility
+    const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+    console.log('[LLM] Calling', model, 'base:', process.env.DEEPSEEK_BASE_URL || 'default');
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('LLM timeout')), timeoutMs)
     );
 
     const completion = await Promise.race([
       client.chat.completions.create({
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+        model,
         messages,
         temperature: 0.85,
         max_tokens: 800,
@@ -59,7 +61,8 @@ export async function callLLM(
     const raw = (completion as any).choices?.[0]?.message?.content || '';
     return parseResponse(raw);
   } catch (error) {
-    console.error('[LLM] Call error:', error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[LLM] Call error:', errMsg, '| type:', error instanceof Error ? error.constructor.name : typeof error);
     // Graceful timeout fallback
     if (error instanceof Error && error.message === 'LLM timeout') {
       console.error('[LLM] Timeout after', timeoutMs, 'ms');
