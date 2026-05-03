@@ -28,7 +28,7 @@ export async function GET(request: Request) {
       ? `当前正在播放「${currentTrack}」，请推荐下一首歌，并给出一句简短的串场词`
       : `请推荐一首适合现在听的歌，并给出一句简短的串场词`;
 
-    const djResponse = await callLLM(systemPrompt, userMessage, [], 10000);
+    const djResponse = await callLLM(systemPrompt, userMessage, [], 8000);
 
     // Resolve the first recommended track
     const trackQuery = Array.isArray(djResponse.play) && djResponse.play.length > 0 ? djResponse.play[0].query : '';

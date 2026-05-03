@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       }));
 
     // Call LLM
-    const djResponse = await callLLM(systemPrompt, message, llmHistory, 12000);
+    const djResponse = await callLLM(systemPrompt, message, llmHistory, 8000);
 
     // Resolve any recommended tracks
     let tracks: Track[] = [];

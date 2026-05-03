@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       ? `请根据我的这个特定要求为我生成一个${count}首歌的歌单：${requirement}`
       : `请为我生成一个${count}首歌的歌单，根据当前的时间和环境来选择合适的音乐`;
 
-    const djResponse = await callLLM(systemPrompt, userMessage, [], 12000);
+    const djResponse = await callLLM(systemPrompt, userMessage, [], 8000);
 
     // 3. Resolve tracks from NCM and attach intros
     const playItems = Array.isArray(djResponse?.play) ? djResponse.play.slice(0, count) : [];
