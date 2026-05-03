@@ -9,3 +9,5 @@ user/favorites-cache.json
 .idea/
 .DS_Store
 .idea/
+.vercel
+env copy.local

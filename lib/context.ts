@@ -1,6 +1,8 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { getCurrentWeather } from './weather';
+import persona from '@/prompts/dj-persona.md';
+import taste from '@/user/taste.md';
+import routines from '@/user/routines.md';
+import moodRules from '@/user/mood-rules.md';
 
 /**
  * Build the full system prompt for the DJ persona.
@@ -15,23 +17,16 @@ export async function buildContext(options: {
   const fragments: string[] = [];
 
   // ① System persona
-  const persona = readMdFile('prompts/dj-persona.md');
-  fragments.push(persona);
+  fragments.push(persona.trim());
 
   // ② User taste profile
-  const taste = readMdFile('user/taste.md');
-  const routines = readMdFile('user/routines.md');
-  const moodRules = readMdFile('user/mood-rules.md');
+  const t = taste.trim();
+  const r = routines.trim();
+  const m = moodRules.trim();
 
-  if (taste) {
-    fragments.push(`## 用户品味\n${taste}`);
-  }
-  if (routines) {
-    fragments.push(`## 时段偏好\n${routines}`);
-  }
-  if (moodRules) {
-    fragments.push(`## 情绪规则\n${moodRules}`);
-  }
+  if (t) fragments.push(`## 用户品味\n${t}`);
+  if (r) fragments.push(`## 时段偏好\n${r}`);
+  if (m) fragments.push(`## 情绪规则\n${m}`);
 
   // ③ Environment injection
   const now = new Date();
@@ -83,16 +78,6 @@ export async function buildContext(options: {
   }
 
   return fragments.join('\n\n---\n\n');
-}
-
-function readMdFile(relativePath: string): string {
-  try {
-    const fullPath = join(process.cwd(), relativePath);
-    return readFileSync(fullPath, 'utf-8').trim();
-  } catch (error) {
-    console.error(`[Context] Failed to read ${relativePath}:`, error);
-    return '';
-  }
 }
 
 function getTimeOfDay(hour: number): string {
