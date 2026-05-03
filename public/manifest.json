@@ -1,0 +1,21 @@
+{
+  "name": "ChaosRadio",
+  "short_name": "ChaosRadio",
+  "description": "Your personal AI DJ radio station",
+  "start_url": "/player",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#7c42f0",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

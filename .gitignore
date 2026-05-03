@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.env
+.env.local
+.env*.local
+out/
+user/favorites-cache.json
+.DS_Store
+.idea/
+.DS_Store
+.idea/
