@@ -50,7 +50,7 @@ export async function callLLM(
         model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
         messages,
         temperature: 0.85,
-        max_tokens: 1500,
+        max_tokens: 800,
         response_format: { type: 'json_object' },
       } as any),
       timeoutPromise
