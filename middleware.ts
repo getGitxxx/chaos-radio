@@ -11,7 +11,7 @@ function timingSafeEquals(a: string, b: string): boolean {
   return result === 0;
 }
 
-const PUBLIC_PATHS = ['/', '/api/auth'];
+const PUBLIC_PATHS = ['/', '/api/auth', '/api/health'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
