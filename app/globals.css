@@ -128,15 +128,13 @@ html {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
-  background-color: #020308; /* Dark background for the desktop "table" */
-  display: flex;
-  justify-content: center;
+  background-color: var(--color-bg-deepest);
   min-height: 100dvh;
+  min-height: 100vh; /* Fallback */
 }
 
 body {
   width: 100%;
-  max-width: 420px; /* Strict mobile width */
   min-height: 100dvh;
   position: relative;
   font-family: var(--font-body);
@@ -146,10 +144,15 @@ body {
   background-color: var(--color-bg-deepest);
   overflow-x: hidden;
   /* Dotted background pattern */
-  background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
   background-size: 24px 24px;
   background-position: 0 0;
-  box-shadow: 0 0 50px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  
+  /* iOS PWA Safe Area Padding */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 a {
