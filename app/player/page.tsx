@@ -6,6 +6,7 @@ import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { usePlayHistory } from '../../hooks/usePlayHistory';
 import { useLikedTracks } from '../../hooks/useLikedTracks';
 import { useDislikedTracks } from '../../hooks/useDislikedTracks';
+import { useTouchGestures } from '../../hooks/useTouchGestures';
 import type { Track, PlaylistPlan } from '../../lib/types';
 import DotMatrix from '../../components/DotMatrix';
 import s from './player.module.css';
@@ -52,6 +53,13 @@ export default function PlayerPage() {
       return localStorage.getItem('chaos-radio-dj-style') || '深夜电台';
     }
     return '深夜电台';
+  });
+
+  // Touch gestures: double tap = play/pause, swipe left = next, swipe right = prev
+  const { onTouchStart, onTouchEnd, gestureFeedback } = useTouchGestures({
+    onDoubleTap: () => player.togglePlay(),
+    onSwipeLeft: () => player.nextTrack(),
+    onSwipeRight: () => player.prevTrack(),
   });
 
   const handlePlaylistNearEnd = useCallback(async (currentTrack: Track) => {
@@ -372,7 +380,7 @@ export default function PlayerPage() {
 
   return (
     <div className={s.radioLayout}>
-      <div className={s.phoneWrapper}>
+      <div className={s.phoneWrapper} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {!uiHidden && (
           <>
             {/* Top Header */}
@@ -569,6 +577,11 @@ export default function PlayerPage() {
             })}
           </div>
         </div>
+
+        {/* Gesture Feedback Toast */}
+        {gestureFeedback && (
+          <div className={s.gestureToast}>{gestureFeedback}</div>
+        )}
 
         {/* DJ Chat Section */}
         <div className={`${s.chatSection} ${s.z1}`} ref={transcriptRef}>
