@@ -7,7 +7,10 @@ out/
 user/favorites-cache.json
 .DS_Store
 .idea/
-.DS_Store
-.idea/
 .vercel
 env copy.local
+
+# Testing
+playwright-report/
+test-results/
+coverage/
