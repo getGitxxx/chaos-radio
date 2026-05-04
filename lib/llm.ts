@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import type { DJResponse } from './types';
+import { withRetry } from './retry';
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY || '',
@@ -20,7 +21,7 @@ const DJ_OUTPUT_SCHEMA = `You MUST respond with valid JSON in this exact format:
 }`;
 
 /**
- * Call DeepSeek to generate a DJ response.
+ * Call DeepSeek to generate a DJ response with retry and timeout.
  */
 export async function callLLM(
   systemPrompt: string,
@@ -28,55 +29,51 @@ export async function callLLM(
   history: { role: 'user' | 'assistant'; content: string }[] = [],
   timeoutMs: number = 12000
 ): Promise<DJResponse> {
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    {
+      role: 'system',
+      content: `${systemPrompt}\n\n${DJ_OUTPUT_SCHEMA}`,
+    },
+    ...history.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    })),
+    { role: 'user', content: userMessage },
+  ];
+
+  const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+  console.log('[LLM] Calling', model, 'base:', process.env.DEEPSEEK_BASE_URL || 'default');
+
   try {
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      {
-        role: 'system',
-        content: `${systemPrompt}\n\n${DJ_OUTPUT_SCHEMA}`,
-      },
-      ...history.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
-      { role: 'user', content: userMessage },
-    ];
-    // Implement timeout-aware LLM call using Promise.race for broad compatibility
-    const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-    console.log('[LLM] Calling', model, 'base:', process.env.DEEPSEEK_BASE_URL || 'default');
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('LLM timeout')), timeoutMs)
-    );
+    const raw = await withRetry(async () => {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('LLM timeout')), timeoutMs)
+      );
 
-    const completion = await Promise.race([
-      client.chat.completions.create({
-        model,
-        messages,
-        temperature: 0.85,
-        max_tokens: 800,
-        response_format: { type: 'json_object' },
-      } as any),
-      timeoutPromise
-    ]);
+      const completion = await Promise.race([
+        client.chat.completions.create({
+          model,
+          messages,
+          temperature: 0.85,
+          max_tokens: 800,
+          response_format: { type: 'json_object' },
+        } as any),
+        timeoutPromise
+      ]) as any;
 
-    const raw = (completion as any).choices?.[0]?.message?.content || '';
+      const content = completion?.choices?.[0]?.message?.content;
+      if (!content) throw new Error('LLM returned empty content');
+      return content;
+    }, { retries: 2, delayMs: 2000 });
+
     return parseResponse(raw);
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    console.error('[LLM] Call error:', errMsg, '| type:', error instanceof Error ? error.constructor.name : typeof error);
-    // Graceful timeout fallback
-    if (error instanceof Error && error.message === 'LLM timeout') {
-      console.error('[LLM] Timeout after', timeoutMs, 'ms');
-      return {
-        say: '信号有点慢，让我再想想...',
-        play: [],
-        reason: 'LLM request timed out',
-        segue: 'warm',
-      };
-    }
+    console.error('[LLM] All retries exhausted:', errMsg);
     return {
       say: '信号有点不稳定，让我再想想...',
       play: [],
-      reason: `Error: ${error}`,
+      reason: `LLM call failed after retries: ${errMsg}`,
       segue: 'warm',
     };
   }

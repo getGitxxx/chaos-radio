@@ -1,4 +1,5 @@
 import type { Track, NCMSearchResult } from './types';
+import { withRetry } from './retry';
 
 /**
  * NCM API wrapper for Vercel serverless functions.
@@ -11,18 +12,28 @@ async function ncmApi() {
   return api;
 }
 
+const NCM_TIMEOUT = 8000; // 8s timeout for NCM calls
+
+async function callNcm<T>(fn: () => Promise<T>): Promise<T> {
+  return withRetry(async () => {
+    // Note: NCM API doesn't support AbortController natively, so we rely on its internal timeout
+    // and our retry mechanism for resilience.
+    return fn();
+  }, { retries: 2, delayMs: 1000 });
+}
+
 export async function searchSongs(
   keyword: string,
   limit: number = 10
 ): Promise<NCMSearchResult[]> {
   try {
     const api = await ncmApi();
-    const result = await api.cloudsearch({
+    const result = await callNcm(() => api.cloudsearch({
       keywords: keyword,
       limit,
       type: 1, // 1 = songs
       cookie: process.env.NCM_COOKIE,
-    });
+    }));
 
     const songs = ((result as any)?.body?.result?.songs ?? []) as any[];
     if (!Array.isArray(songs)) return [];
@@ -50,11 +61,11 @@ export async function searchSongs(
 export async function getSongUrl(id: number): Promise<string | null> {
   try {
     const api = await ncmApi();
-    const result = await api.song_url({ 
+    const result = await callNcm(() => api.song_url({ 
       id, 
       br: 320000,
       cookie: process.env.NCM_COOKIE,
-    });
+    }));
 
     const data = result?.body?.data;
     if (!Array.isArray(data) || data.length === 0) return null;
@@ -69,10 +80,10 @@ export async function getSongUrl(id: number): Promise<string | null> {
 export async function getLyric(id: number): Promise<{ lyric: string; tlyric: string }> {
   try {
     const api = await ncmApi();
-    const result = await api.lyric({ 
+    const result = await callNcm(() => api.lyric({ 
       id,
       cookie: process.env.NCM_COOKIE,
-    });
+    }));
 
     return {
       lyric: ((result as any)?.body?.lrc?.lyric) ?? '',
@@ -87,10 +98,10 @@ export async function getLyric(id: number): Promise<{ lyric: string; tlyric: str
 export async function getSongDetail(id: number): Promise<Track | null> {
   try {
     const api = await ncmApi();
-    const result = await api.song_detail({ 
+    const result = await callNcm(() => api.song_detail({ 
       ids: String(id),
       cookie: process.env.NCM_COOKIE,
-    });
+    }));
 
     const songs = result?.body?.songs;
     if (!Array.isArray(songs) || songs.length === 0) return null;

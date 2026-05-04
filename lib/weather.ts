@@ -1,4 +1,5 @@
 import type { WeatherInfo } from './types';
+import { fetchWithTimeout, withRetry } from './retry';
 
 export async function getCurrentWeather(): Promise<WeatherInfo | null> {
   const apiKey = process.env.OPENWEATHER_API_KEY;
@@ -11,10 +12,11 @@ export async function getCurrentWeather(): Promise<WeatherInfo | null> {
 
   try {
     const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${apiKey}&units=metric&lang=zh_cn`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(url, { next: { revalidate: 1800 }, signal: controller.signal });
-    clearTimeout(timeoutId);
+
+    const res = await withRetry(
+      () => fetchWithTimeout(url, { next: { revalidate: 1800 } }, 5000),
+      { retries: 1, delayMs: 1000 }
+    );
 
     if (!res.ok) {
       console.error('[Weather] API returned:', res.status);

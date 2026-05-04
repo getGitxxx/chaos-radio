@@ -39,11 +39,12 @@ export async function GET(request: Request) {
     upstreamUrl.searchParams.set('rate', '0');
     upstreamUrl.searchParams.set('pitch', '0');
 
-    // Fetch from upstream with auth
+    // Fetch from upstream with auth and timeout
     const response = await fetch(upstreamUrl.toString(), {
       headers: {
         'Authorization': token ? `Bearer ${token}` : '',
-      }
+      },
+      signal: AbortSignal.timeout(10000), // 10s timeout for TTS
     });
 
     if (!response.ok) {
