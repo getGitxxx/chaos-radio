@@ -12,21 +12,26 @@ export default function SettingsPage() {
   const [city, setCity] = useState('');
   const [favCount, setFavCount] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isSavingTaste, setIsSavingTaste] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [djStyle, setDjStyle] = useState('深夜电台');
 
   useEffect(() => {
-    // Load taste profile
-    fetch('/api/taste')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          setTaste(data.data.content);
-          setTasteOriginal(data.data.content);
-        }
-      })
-      .catch(() => setTaste('加载失败'));
+    // Load taste profile - check localStorage override first
+    const savedTaste = localStorage.getItem('chaos-radio-taste-override');
+    if (savedTaste) {
+      setTaste(savedTaste);
+      setTasteOriginal(savedTaste);
+    } else {
+      fetch('/api/taste')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            setTaste(data.data.content);
+            setTasteOriginal(data.data.content);
+          }
+        })
+        .catch(() => setTaste('加载失败'));
+    }
 
     // Load city from localStorage
     const savedCity = localStorage.getItem('chaos-radio-city');
@@ -59,29 +64,13 @@ export default function SettingsPage() {
     setTimeout(() => setSaveMessage(''), 2000);
   };
 
-  const handleSaveTaste = async () => {
-    if (isSavingTaste) return;
-    setIsSavingTaste(true);
-    setSaveMessage('');
-    try {
-      const res = await fetch('/api/taste', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: taste }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setTasteOriginal(taste);
-        setSaveMessage('音乐品味已保存，下次生成歌单时生效 ✨');
-      } else {
-        setSaveMessage('保存失败: ' + (data.error || '未知错误'));
-      }
-    } catch (err) {
-      setSaveMessage('保存请求失败');
-      console.error(err);
-    } finally {
-      setIsSavingTaste(false);
-    }
+  const handleSaveTaste = () => {
+    // Vercel serverless has read-only filesystem, save to localStorage instead
+    // tasteOverride will be passed to LLM context on each request
+    localStorage.setItem('chaos-radio-taste-override', taste);
+    setTasteOriginal(taste);
+    setSaveMessage('音乐品味已保存，下次生成歌单时生效 ✨');
+    setTimeout(() => setSaveMessage(''), 3000);
   };
 
   const handleSyncFavorites = async () => {
@@ -167,9 +156,9 @@ export default function SettingsPage() {
             <button
               className="save-btn text-mono"
               onClick={handleSaveTaste}
-              disabled={isSavingTaste || !tasteChanged}
+              disabled={!tasteChanged}
             >
-              {isSavingTaste ? '保存中...' : tasteChanged ? '保存品味' : '已保存 ✓'}
+              {tasteChanged ? '保存品味' : '已保存 ✓'}
             </button>
           </div>
         </section>

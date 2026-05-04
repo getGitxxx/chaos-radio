@@ -54,6 +54,13 @@ export default function PlayerPage() {
     }
     return '深夜电台';
   });
+  const [tasteOverride, setTasteOverride] = useState<string | undefined>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('chaos-radio-taste-override');
+      return saved || undefined;
+    }
+    return undefined;
+  });
 
   // Touch gestures: double tap = play/pause, swipe left = next, swipe right = prev
   const { onTouchStart, onTouchEnd, gestureFeedback } = useTouchGestures({
@@ -78,6 +85,7 @@ export default function PlayerPage() {
           disliked: getDislikedIds(),
           prompt: '继续推荐下一批歌曲，保持当前的音乐风格和情绪连贯。',
           djStyle,
+          tasteOverride,
         })
       });
       const json = await res.json();
@@ -97,7 +105,7 @@ export default function PlayerPage() {
       console.error('[Player] Preload error:', error);
       setDjMessage('下一批歌曲信号中断，但我会继续播放...');
     }
-  }, [getRecentNames, getLikedIds, getDislikedIds, djStyle]);
+  }, [getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
 
   const player = useAudioPlayer({ onTrackNearEnd: handleTrackNearEnd, onPlaylistNearEnd: handlePlaylistNearEnd });
   playerRef.current = player;
@@ -152,6 +160,7 @@ export default function PlayerPage() {
           disliked: getDislikedIds(),
           prompt: requirement,
           djStyle,
+          tasteOverride,
         })
       });
       const json = await res.json();
@@ -186,7 +195,7 @@ export default function PlayerPage() {
       setLoading(false);
       setLoadingStage('idle');
     }
-  }, [chatInput, getRecentNames, getLikedIds, getDislikedIds, player, djStyle]);
+  }, [chatInput, getRecentNames, getLikedIds, getDislikedIds, player, djStyle, tasteOverride]);
 
   // Load from cache on mount - auto generate playlist
   useEffect(() => {
@@ -237,6 +246,7 @@ export default function PlayerPage() {
               disliked: getDislikedIds(),
               prompt: '',
               djStyle,
+              tasteOverride,
             })
           });
           const json = await res.json();
@@ -277,7 +287,7 @@ export default function PlayerPage() {
       }
     };
     loadPlan();
-  }, [initialized, player, getRecentNames, getLikedIds, getDislikedIds, djStyle]);
+  }, [initialized, player, getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
 
   // Dragging logic
   const progressBarRef = useRef<HTMLDivElement>(null);
