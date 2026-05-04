@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { usePlayHistory } from '../../hooks/usePlayHistory';
 import { useLikedTracks } from '../../hooks/useLikedTracks';
+import { useDislikedTracks } from '../../hooks/useDislikedTracks';
 import type { Track, PlaylistPlan } from '../../lib/types';
 import DotMatrix from '../../components/DotMatrix';
 import s from './player.module.css';
@@ -26,6 +27,7 @@ export default function PlayerPage() {
 
   const { addPlay, getRecentNames } = usePlayHistory();
   const { toggleLike, isLiked, getLikedIds, getLikedArray } = useLikedTracks();
+  const { addDislike, isDisliked, getDislikedIds } = useDislikedTracks();
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
@@ -57,6 +59,7 @@ export default function PlayerPage() {
         body: JSON.stringify({
           recent,
           liked: getLikedIds(),
+          disliked: getDislikedIds(),
           prompt: '继续推荐下一批歌曲，保持当前的音乐风格和情绪连贯。'
         })
       });
@@ -129,6 +132,7 @@ export default function PlayerPage() {
         body: JSON.stringify({
           recent,
           liked: getLikedIds(),
+          disliked: getDislikedIds(),
           prompt: requirement
         })
       });
@@ -212,6 +216,7 @@ export default function PlayerPage() {
             body: JSON.stringify({
               recent,
               liked: getLikedIds(),
+              disliked: getDislikedIds(),
               prompt: ''
             })
           });
@@ -470,6 +475,36 @@ export default function PlayerPage() {
               <button className={s.ctrlBtnLg} onClick={() => player.nextTrack()}>
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
               </button>
+              {/* Skip + Dislike buttons */}
+              {currentTrack && (
+                <div className={s.feedbackBtns}>
+                  <button 
+                    className={`${s.feedbackBtn} ${s.skipBtn}`} 
+                    onClick={() => {
+                      player.nextTrack();
+                      setDjMessage('跳过这首，换个口味...');
+                    }}
+                    title="跳过这首"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                  <button 
+                    className={`${s.feedbackBtn} ${isDisliked(currentTrack.id) ? s.dislikedBtn : ''}`} 
+                    onClick={() => {
+                      addDislike(currentTrack);
+                      player.nextTrack();
+                      setDjMessage('这首不喜欢，换一首...');
+                    }}
+                    title="不喜欢，换一首"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill={isDisliked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                      <path d="M10 15v4h3v-4h4l-5-5-5 5h4zm9-1V8l-4.5 4.5L14 12l.5.5L15 13l-4 4-4-4 .5-.5L8 12l-.5-.5L7 7v6h4z" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className={s.sideControls}>
