@@ -19,6 +19,8 @@ export interface AudioPlayerState {
 
 export interface AudioPlayerOptions {
   onTrackNearEnd?: (currentTrack: Track, nextTrack?: Track) => void;
+  /** Fires when the last track of the playlist reaches the given remaining seconds (default: 30). */
+  onPlaylistNearEnd?: (currentTrack: Track) => void;
 }
 
 export function useAudioPlayer(options?: AudioPlayerOptions) {
@@ -50,7 +52,13 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
     onTrackNearEndRef.current = options?.onTrackNearEnd;
   }, [options?.onTrackNearEnd]);
 
+  const onPlaylistNearEndRef = useRef(options?.onPlaylistNearEnd);
+  useEffect(() => {
+    onPlaylistNearEndRef.current = options?.onPlaylistNearEnd;
+  }, [options?.onPlaylistNearEnd]);
+
   const nearEndTriggeredRef = useRef<boolean>(false);
+  const playlistNearEndTriggeredRef = useRef<number | null>(null); // last track id that triggered
   const nextTrackRef = useRef<(() => void) | null>(null);
 
   // Initialize audio elements
@@ -86,12 +94,27 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
         duration,
         activeLyricIndex: findActiveLyricIndex(prev.lyrics, currentTime),
       }));
+
+      // Track near-end (15s remaining) — for DJ intro
       if (duration > 0 && duration - currentTime <= 15 && !nearEndTriggeredRef.current) {
         nearEndTriggeredRef.current = true;
         const currentS = stateRef.current;
         if (onTrackNearEndRef.current && currentS.currentTrack) {
           const nextTrack = currentS.playlist[currentS.currentIndex + 1];
           onTrackNearEndRef.current(currentS.currentTrack, nextTrack);
+        }
+      }
+
+      // Playlist near-end (30s remaining on last track) — for auto-preload
+      const currentS2 = stateRef.current;
+      const isLastTrack = currentS2.currentIndex === currentS2.playlist.length - 1 && currentS2.currentIndex >= 0;
+      if (duration > 0 && isLastTrack && duration - currentTime <= 30) {
+        const trackId = currentS2.currentTrack?.id;
+        if (trackId !== undefined && playlistNearEndTriggeredRef.current !== trackId) {
+          playlistNearEndTriggeredRef.current = trackId;
+          if (onPlaylistNearEndRef.current && currentS2.currentTrack) {
+            onPlaylistNearEndRef.current(currentS2.currentTrack);
+          }
         }
       }
     };

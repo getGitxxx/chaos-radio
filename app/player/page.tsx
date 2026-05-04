@@ -23,9 +23,6 @@ export default function PlayerPage() {
     }
   }, []);
 
-  const player = useAudioPlayer({ onTrackNearEnd: handleTrackNearEnd });
-  playerRef.current = player;
-
   const { addPlay, getRecentNames } = usePlayHistory();
   const transcriptRef = useRef<HTMLDivElement>(null);
 
@@ -42,6 +39,45 @@ export default function PlayerPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragTime, setDragTime] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const preloadRef = useRef(false);
+
+  const handlePlaylistNearEnd = useCallback(async (currentTrack: Track) => {
+    if (preloadRef.current) return;
+    preloadRef.current = true;
+
+    console.log('[Player] Playlist near-end: preloading next batch...');
+    try {
+      const recent = getRecentNames();
+      const res = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recent,
+          liked: Object.keys(likedTracks),
+          prompt: '继续推荐下一批歌曲，保持当前的音乐风格和情绪连贯。'
+        })
+      });
+      const json = await res.json();
+      if (!json.success || !json.data) {
+        console.error('[Player] Preload failed:', json.error);
+        setDjMessage('下一批歌曲没信号，让我再试试...');
+        return;
+      }
+
+      const data: PlaylistPlan = json.data;
+      playerRef.current?.addToPlaylist(data.tracks);
+      setDjMessage(data.djMessage);
+      setChatMessages(prev => [...prev, { role: 'dj', content: data.djMessage }]);
+      playerRef.current?.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
+      localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
+    } catch (error) {
+      console.error('[Player] Preload error:', error);
+      setDjMessage('下一批歌曲信号中断，但我会继续播放...');
+    }
+  }, [getRecentNames, likedTracks]);
+
+  const player = useAudioPlayer({ onTrackNearEnd: handleTrackNearEnd, onPlaylistNearEnd: handlePlaylistNearEnd });
+  playerRef.current = player;
 
   const { currentTrack, isPlaying, currentTime, duration, playlist: rawPlaylist, currentIndex, isTTSPlaying, lyrics, activeLyricIndex } = player.state || {};
   const playlist = Array.isArray(rawPlaylist) ? rawPlaylist : [];
@@ -90,6 +126,7 @@ export default function PlayerPage() {
       const data: PlaylistPlan = json.data;
 
       playedIntrosRef.current.clear();
+      preloadRef.current = false;
       player.setPlaylist(data.tracks, 0);
       setDjMessage(data.djMessage);
       setChatMessages(prev => [...prev, { role: 'dj', content: data.djMessage }]);
@@ -116,6 +153,7 @@ export default function PlayerPage() {
           setDjMessage(data.djMessage);
           setChatMessages([{ role: 'dj', content: data.djMessage }]);
           playedIntrosRef.current.clear();
+          preloadRef.current = false;
           player.setPlaylist(data.tracks, 0);
           player.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
         } else {

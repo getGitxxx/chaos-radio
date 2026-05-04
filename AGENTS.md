@@ -110,6 +110,10 @@ middleware.ts           # Auth gate: cookie check on all non-public routes
 - Edge runtime (`middleware.ts`, some API routes) → no Node.js APIs. Use Web Crypto for hashing.
 - The LLM prompt is assembled at request time from 4+ MD files — changes to any user/ file take effect immediately with no rebuild.
 
+## Development Conventions
+
+**MANDATORY**: Read `DEV_CONVENTIONS.md` before any code change. It defines error handling, type safety, API route standards, audio rules, and anti-patterns for v2.0.
+
 ## Deploy
 
 Targeted for Vercel. Set all env vars in Vercel dashboard. `npm run build` must pass in production.
