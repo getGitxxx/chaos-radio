@@ -28,7 +28,14 @@
   
   /* Safe Area for iOS PWA */
   padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  
+  /* Padding for fixed Chat Section */
+  padding-bottom: 280px;
+}
+
+/* Keyboard Mode: Reduce padding */
+.phoneWrapper.keyboardMode {
+  padding-bottom: 80px; /* Just enough for the compact input */
 }
 
 .phoneWrapper::-webkit-scrollbar {
@@ -654,11 +661,45 @@
 
 /* ===== DJ Chat Section ===== */
 .chatSection {
-  padding: 20px;
-  flex: 1;
+  /* Fixed at bottom */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: 420px; /* Keep centered on desktop */
+  margin: 0 auto;
+  z-index: 100;
+  
+  background: rgba(5, 8, 20, 0.98);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(0, 255, 102, 0.2);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
+  
+  padding: 0 16px;
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: 12px;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  height: 260px; /* Default height */
+  transition: height 0.3s ease, transform 0.3s ease;
+}
+
+/* Keyboard Mode: Hide history & header, compact input */
+.chatSection.keyboardMode {
+  height: auto; /* Auto height for just input */
+  background: #050814; /* Solid bg when keyboard is up */
+}
+
+.chatSection.keyboardMode .chatHeader,
+.chatSection.keyboardMode .chatHistory {
+  display: none !important;
+}
+
+.chatSection.keyboardMode .inputArea {
+  margin-top: 0;
+  margin-bottom: 8px;
+  border-color: rgba(0, 255, 102, 0.4);
+  box-shadow: 0 0 15px rgba(0, 255, 102, 0.1);
 }
 
 .chatHeader {

@@ -44,6 +44,7 @@ export default function PlayerPage() {
   const [uiHidden, setUiHidden] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragTime, setDragTime] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const preloadRef = useRef(false);
 
@@ -117,6 +118,23 @@ export default function PlayerPage() {
     setMounted(true);
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Keyboard detection for iOS PWA
+  useEffect(() => {
+    const vp = window.visualViewport;
+    if (!vp) return;
+
+    const handleResize = () => {
+      // If viewport height shrinks significantly, keyboard is likely visible
+      const isKb = window.innerHeight - vp.height > 150;
+      setIsKeyboardVisible(isKb);
+    };
+
+    vp.addEventListener('resize', handleResize);
+    // Check initial state
+    handleResize();
+    return () => vp.removeEventListener('resize', handleResize);
   }, []);
 
   // Keyboard controls
@@ -390,7 +408,7 @@ export default function PlayerPage() {
 
   return (
     <div className={s.radioLayout}>
-      <div className={s.phoneWrapper} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <div className={`${s.phoneWrapper} ${isKeyboardVisible ? s.keyboardMode : ''}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {!uiHidden && (
           <>
             {/* Top Header */}
@@ -594,7 +612,7 @@ export default function PlayerPage() {
         )}
 
         {/* DJ Chat Section */}
-        <div className={`${s.chatSection} ${s.z1}`} ref={transcriptRef}>
+        <div className={`${s.chatSection} ${s.z1} ${isKeyboardVisible ? s.keyboardMode : ''}`} ref={transcriptRef}>
           <div className={`${s.chatHeader} ${s.mono}`}>
             <div className={s.chatBrand}>
               <div className={s.brandDot}></div>
