@@ -34,8 +34,14 @@ export const metadata: Metadata = {
   description:
     'Personal AI radio station that understands your taste, curates playlists, and delivers DJ-style commentary between tracks.',
   icons: {
-    icon: '/favicon.ico',
-    apple: '/icon-192.png',
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: '16x16 32x32 48x48' },
+    ],
+    apple: [
+      { url: '/icon-192.png', sizes: '192x192' },
+      { url: '/icon-512.png', sizes: '512x512' },
+    ],
   },
   manifest: '/manifest.json',
   appleWebApp: {
@@ -61,7 +67,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#09090b',
+  themeColor: '#050814',
 };
 
 export default function RootLayout({
