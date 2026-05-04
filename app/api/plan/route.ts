@@ -16,7 +16,7 @@ const djService = new DJService();
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { mood, prompt, count = 5, recentPlays = [], likedPlays = [] } = body;
+    const { mood, prompt, count = 5, recentPlays = [], likedPlays = [], dislikedPlays = [], tasteOverride, djStyle } = body;
 
     // Non-streaming fallback for simple clients
     if (!request.headers.get('accept')?.includes('text/event-stream')) {
@@ -25,6 +25,9 @@ export async function POST(request: Request) {
         count,
         recentPlays,
         likedPlays,
+        dislikedPlays,
+        tasteOverride,
+        djStyle,
       });
       return NextResponse.json({ success: true, data: result });
     }
@@ -35,6 +38,9 @@ export async function POST(request: Request) {
       count,
       recentPlays,
       likedPlays,
+      dislikedPlays,
+      tasteOverride,
+      djStyle,
     });
 
     const encoder = new TextEncoder();

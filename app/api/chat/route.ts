@@ -6,7 +6,7 @@ const djService = new DJService();
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { message, history = [], recentPlays = [], likedPlays = [] } = body;
+    const { message, history = [], recentPlays = [], likedPlays = [], dislikedPlays = [], mood, tasteOverride, djStyle } = body;
 
     // Validation
     if (!message || typeof message !== 'string') {
@@ -28,6 +28,9 @@ export async function POST(request: Request) {
       history,
       recentPlays,
       likedPlays,
+      dislikedPlays,
+      tasteOverride,
+      djStyle,
     });
 
     return NextResponse.json({ success: true, data: result });

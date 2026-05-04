@@ -11,6 +11,9 @@ export async function GET(request: Request) {
     const recentPlays = recentPlaysRaw ? recentPlaysRaw.split('|') : [];
     const likedPlaysRaw = searchParams.get('liked') || '';
     const likedPlays = likedPlaysRaw ? likedPlaysRaw.split('|') : [];
+    const dislikedPlaysRaw = searchParams.get('disliked') || '';
+    const dislikedPlays = dislikedPlaysRaw ? dislikedPlaysRaw.split('|') : [];
+    const djStyle = searchParams.get('djStyle') || '';
 
     // Validation
     if (recentPlays.length > 20) {
@@ -24,6 +27,8 @@ export async function GET(request: Request) {
       currentTrack,
       recentPlays,
       likedPlays,
+      dislikedPlays,
+      djStyle,
     });
 
     return NextResponse.json({ success: true, data: result });

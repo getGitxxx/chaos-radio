@@ -19,7 +19,10 @@ import type { Track, DJResponse } from '../types';
 export interface BuildContextOptions {
   recentPlays?: string[];
   likedPlays?: string[];
+  dislikedPlays?: string[];
   mood?: string;
+  tasteOverride?: string;
+  djStyle?: string;
 }
 
 export interface GeneratePlaylistOptions extends BuildContextOptions {

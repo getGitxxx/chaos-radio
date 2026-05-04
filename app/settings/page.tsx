@@ -3,25 +3,38 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+const DJ_STYLES = ['深夜电台', '文艺范', '治愈', '搞笑', '毒舌'];
+
 export default function SettingsPage() {
   const router = useRouter();
-  const [taste, setTaste] = useState('加载中...');
+  const [taste, setTaste] = useState('');
+  const [tasteOriginal, setTasteOriginal] = useState('');
   const [city, setCity] = useState('');
   const [favCount, setFavCount] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSavingTaste, setIsSavingTaste] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [djStyle, setDjStyle] = useState('深夜电台');
 
   useEffect(() => {
     // Load taste profile
     fetch('/api/taste')
       .then((res) => res.json())
       .then((data) => {
-        if (data.success) setTaste(data.data.content || '未设置');
+        if (data.success) {
+          setTaste(data.data.content);
+          setTasteOriginal(data.data.content);
+        }
       })
       .catch(() => setTaste('加载失败'));
 
     // Load city from localStorage
     const savedCity = localStorage.getItem('chaos-radio-city');
     if (savedCity) setCity(savedCity);
+
+    // Load DJ style
+    const savedStyle = localStorage.getItem('chaos-radio-dj-style');
+    if (savedStyle) setDjStyle(savedStyle);
 
     // Load favorites count
     fetch('/api/favorites')
@@ -39,6 +52,38 @@ export default function SettingsPage() {
     localStorage.setItem('chaos-radio-city', value);
   };
 
+  const handleStyleChange = (style: string) => {
+    setDjStyle(style);
+    localStorage.setItem('chaos-radio-dj-style', style);
+    setSaveMessage(`DJ 风格已切换为「${style}」`);
+    setTimeout(() => setSaveMessage(''), 2000);
+  };
+
+  const handleSaveTaste = async () => {
+    if (isSavingTaste) return;
+    setIsSavingTaste(true);
+    setSaveMessage('');
+    try {
+      const res = await fetch('/api/taste', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: taste }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTasteOriginal(taste);
+        setSaveMessage('音乐品味已保存，下次生成歌单时生效 ✨');
+      } else {
+        setSaveMessage('保存失败: ' + (data.error || '未知错误'));
+      }
+    } catch (err) {
+      setSaveMessage('保存请求失败');
+      console.error(err);
+    } finally {
+      setIsSavingTaste(false);
+    }
+  };
+
   const handleSyncFavorites = async () => {
     if (isSyncing) return;
     setIsSyncing(true);
@@ -47,12 +92,12 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success && data.data) {
         setFavCount(data.data.count);
-        alert(data.data.message || '同步成功！');
+        setSaveMessage(data.data.message || '同步成功！');
       } else {
-        alert('同步失败: ' + (data.error || '未知错误'));
+        setSaveMessage('同步失败: ' + (data.error || '未知错误'));
       }
     } catch (err) {
-      alert('同步请求失败');
+      setSaveMessage('同步请求失败');
       console.error(err);
     } finally {
       setIsSyncing(false);
@@ -63,6 +108,8 @@ export default function SettingsPage() {
     document.cookie = 'chaos-radio-token=; Path=/; Max-Age=0';
     router.push('/');
   };
+
+  const tasteChanged = taste !== tasteOriginal;
 
   return (
     <div className="settings-page">
@@ -75,14 +122,55 @@ export default function SettingsPage() {
       </header>
 
       <main className="settings-main">
-        {/* Taste profile */}
+        {/* Save message toast */}
+        {saveMessage && (
+          <div className="save-toast animate-fade-in">
+            {saveMessage}
+          </div>
+        )}
+
+        {/* DJ Style Selector */}
+        <section className="settings-section">
+          <h2 className="section-title text-mono">🎙️ DJ 风格</h2>
+          <p className="section-desc">选择你喜欢的 DJ 说话风格</p>
+          <div className="style-grid">
+            {DJ_STYLES.map((style) => (
+              <button
+                key={style}
+                className={`style-btn text-mono ${djStyle === style ? 'active' : ''}`}
+                onClick={() => handleStyleChange(style)}
+              >
+                {style === '深夜电台' && '🌙 '}
+                {style === '文艺范' && '📖 '}
+                {style === '治愈' && '🫂 '}
+                {style === '搞笑' && '😂 '}
+                {style === '毒舌' && '😏 '}
+                {style}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Taste Editor */}
         <section className="settings-section">
           <h2 className="section-title text-mono">🎵 音乐品味</h2>
-          <p className="section-desc">
-            编辑品味需修改 <code>user/taste.md</code> 后重新部署
-          </p>
-          <div className="taste-preview">
-            <pre className="taste-content">{taste}</pre>
+          <p className="section-desc">编辑你的音乐偏好，保存后下次生成歌单立即生效</p>
+          <textarea
+            className="taste-editor text-mono"
+            value={taste}
+            onChange={(e) => setTaste(e.target.value)}
+            placeholder="输入你的音乐品味..."
+            rows={12}
+          />
+          <div className="taste-actions">
+            <span className="char-count text-mono">{taste.length} / 4096</span>
+            <button
+              className="save-btn text-mono"
+              onClick={handleSaveTaste}
+              disabled={isSavingTaste || !tasteChanged}
+            >
+              {isSavingTaste ? '保存中...' : tasteChanged ? '保存品味' : '已保存 ✓'}
+            </button>
           </div>
         </section>
 
@@ -187,6 +275,22 @@ export default function SettingsPage() {
           width: 100%;
         }
 
+        .save-toast {
+          position: fixed;
+          top: 24px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(0, 255, 102, 0.15);
+          border: 1px solid rgba(0, 255, 102, 0.4);
+          color: #00ff66;
+          padding: 12px 24px;
+          border-radius: 12px;
+          font-size: 13px;
+          z-index: 1000;
+          backdrop-filter: blur(10px);
+          text-align: center;
+        }
+
         .section-title {
           font-size: 16px;
           margin-bottom: 8px;
@@ -199,32 +303,91 @@ export default function SettingsPage() {
           margin-bottom: 12px;
         }
 
-        .section-desc code {
-          background: rgba(255,255,255,0.08);
-          padding: 2px 6px;
-          border-radius: 4px;
-          font-size: 12px;
-          font-family: var(--font-mono);
+        /* DJ Style Grid */
+        .style-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
         }
 
-        .taste-preview {
-          padding: 16px;
-          max-height: 240px;
-          overflow-y: auto;
-          background: rgba(0,0,0,0.4);
-          border: 1px solid rgba(255,255,255,0.08);
+        .style-btn {
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.1);
           border-radius: 8px;
+          padding: 10px 12px;
+          font-size: 13px;
+          color: rgba(255,255,255,0.7);
+          cursor: pointer;
+          transition: all 0.2s;
+          text-align: center;
         }
 
-        .taste-content {
-          font-size: 12px;
+        .style-btn:hover {
+          background: rgba(255,255,255,0.1);
+          border-color: rgba(255,255,255,0.2);
+        }
+
+        .style-btn.active {
+          background: rgba(0, 255, 102, 0.1);
+          border-color: rgba(0, 255, 102, 0.4);
+          color: #00ff66;
+          box-shadow: 0 0 12px rgba(0, 255, 102, 0.2);
+        }
+
+        /* Taste Editor */
+        .taste-editor {
+          width: 100%;
+          background: rgba(0,0,0,0.4);
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 8px;
+          padding: 16px;
+          font-size: 13px;
+          color: white;
+          font-family: var(--font-mono);
           line-height: 1.6;
-          color: rgba(255,255,255,0.6);
-          white-space: pre-wrap;
-          word-break: break-word;
-          margin: 0;
+          resize: vertical;
+          min-height: 200px;
         }
 
+        .taste-editor:focus {
+          outline: none;
+          border-color: rgba(0, 136, 255, 0.4);
+        }
+
+        .taste-actions {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 8px;
+        }
+
+        .char-count {
+          font-size: 11px;
+          color: rgba(255,255,255,0.4);
+        }
+
+        .save-btn {
+          background: rgba(0, 255, 102, 0.1);
+          color: #00ff66;
+          border: 1px solid rgba(0, 255, 102, 0.3);
+          border-radius: 6px;
+          padding: 8px 20px;
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .save-btn:hover:not(:disabled) {
+          background: rgba(0, 255, 102, 0.2);
+          border-color: #00ff66;
+        }
+
+        .save-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        /* Sync Card */
         .sync-card {
           background: rgba(0,0,0,0.4);
           border: 1px solid rgba(255,255,255,0.08);
