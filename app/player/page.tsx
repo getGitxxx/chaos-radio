@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { usePlayHistory } from '../../hooks/usePlayHistory';
+import { useLikedTracks } from '../../hooks/useLikedTracks';
 import type { Track, PlaylistPlan } from '../../lib/types';
 import DotMatrix from '../../components/DotMatrix';
 import s from './player.module.css';
@@ -24,6 +25,7 @@ export default function PlayerPage() {
   }, []);
 
   const { addPlay, getRecentNames } = usePlayHistory();
+  const { toggleLike, isLiked, getLikedIds, getLikedArray } = useLikedTracks();
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
@@ -37,7 +39,6 @@ export default function PlayerPage() {
   const [time, setTime] = useState(new Date());
   const [mounted, setMounted] = useState(false);
   const [uiHidden, setUiHidden] = useState(false);
-  const [likedTracks, setLikedTracks] = useState<Record<string, { name: string, artist: string }>>({});
   const [isDragging, setIsDragging] = useState(false);
   const [dragTime, setDragTime] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -55,7 +56,7 @@ export default function PlayerPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recent,
-          liked: Object.keys(likedTracks),
+          liked: getLikedIds(),
           prompt: '继续推荐下一批歌曲，保持当前的音乐风格和情绪连贯。'
         })
       });
@@ -76,7 +77,7 @@ export default function PlayerPage() {
       console.error('[Player] Preload error:', error);
       setDjMessage('下一批歌曲信号中断，但我会继续播放...');
     }
-  }, [getRecentNames, likedTracks]);
+  }, [getRecentNames, getLikedIds]);
 
   const player = useAudioPlayer({ onTrackNearEnd: handleTrackNearEnd, onPlaylistNearEnd: handlePlaylistNearEnd });
   playerRef.current = player;
@@ -127,7 +128,7 @@ export default function PlayerPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recent,
-          liked: Object.keys(likedTracks),
+          liked: getLikedIds(),
           prompt: requirement
         })
       });
@@ -163,7 +164,7 @@ export default function PlayerPage() {
       setLoading(false);
       setLoadingStage('idle');
     }
-  }, [chatInput, getRecentNames, likedTracks, player]);
+  }, [chatInput, getRecentNames, getLikedIds, player]);
 
   // Load from cache on mount - auto generate playlist
   useEffect(() => {
@@ -210,7 +211,7 @@ export default function PlayerPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               recent,
-              liked: Object.keys(likedTracks),
+              liked: getLikedIds(),
               prompt: ''
             })
           });
@@ -252,7 +253,7 @@ export default function PlayerPage() {
       }
     };
     loadPlan();
-  }, [initialized, player, getRecentNames, likedTracks]);
+  }, [initialized, player, getRecentNames, getLikedIds]);
 
   // Dragging logic
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -400,6 +401,18 @@ export default function PlayerPage() {
               <div className={`${s.trackTitleLg} ${s.mono}`}>
                 {currentTrack ? `${currentTrack.name} - ${currentTrack.artist}` : 'No Signal'}
               </div>
+              {/* Like Button */}
+              {currentTrack && (
+                <button 
+                  className={`${s.likeBtn} ${isLiked(currentTrack.id) ? s.liked : ''}`} 
+                  onClick={() => toggleLike(currentTrack)}
+                  title={isLiked(currentTrack.id) ? '取消收藏' : '收藏这首'}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill={isLiked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                  </svg>
+                </button>
+              )}
               {/* Lyrics Display */}
               <div className={s.lyricRow}>
                 {activeLyricIndex !== -1 && lyrics && lyrics[activeLyricIndex] ? (

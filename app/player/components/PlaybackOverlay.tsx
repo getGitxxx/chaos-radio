@@ -18,6 +18,8 @@ interface PlaybackOverlayProps {
   transcriptRef: React.RefObject<HTMLDivElement>;
   time: Date;
   mounted: boolean;
+  isLiked?: boolean;
+  onToggleLike?: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -30,7 +32,7 @@ function formatTime(seconds: number): string {
 export default function PlaybackOverlay({
   isOpen, onClose, player, djMessage, chatInput, setChatInput,
   handleChat, chatLoading, loading, handleGeneratePlaylist, transcriptRef,
-  time, mounted
+  time, mounted, isLiked = false, onToggleLike
 }: PlaybackOverlayProps) {
   const router = useRouter();
   
@@ -84,6 +86,17 @@ export default function PlaybackOverlay({
             <div className={s.trackTitle}>{currentTrack?.name || 'No Track Selected'}</div>
             <div className={`${s.trackArtist} text-mono`}>{currentTrack?.artist || 'Waiting for signal...'}</div>
           </div>
+          {currentTrack && onToggleLike && (
+            <button 
+              className={`${s.likeBtn} ${isLiked ? s.liked : ''}`} 
+              onClick={onToggleLike}
+              title={isLiked ? '取消收藏' : '收藏这首'}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* Player Controls */}

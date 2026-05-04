@@ -1,14 +1,18 @@
 'use client';
 
 import { usePlayHistory } from '../../hooks/usePlayHistory';
+import { useLikedTracks } from '../../hooks/useLikedTracks';
 import { useRouter } from 'next/navigation';
 import DotMatrix from '../../components/DotMatrix';
 
 export default function ProfilePage() {
   const router = useRouter();
   const { history } = usePlayHistory();
+  const { getLikedArray } = useLikedTracks();
   const totalPlayed = history.length;
   const uniqueArtists = new Set(history.map(h => h.artist)).size;
+  const likedTracks = getLikedArray();
+  const totalLiked = likedTracks.length;
 
   return (
     <div className="profile-page">
@@ -45,6 +49,10 @@ export default function ProfilePage() {
             <span className="stat-value text-display">{totalPlayed}</span>
           </div>
           <div className="stat-item text-mono">
+            <span className="stat-label">LIKED</span>
+            <span className="stat-value text-display">{totalLiked}</span>
+          </div>
+          <div className="stat-item text-mono">
             <span className="stat-label">ARTISTS</span>
             <span className="stat-value text-display">{uniqueArtists || '∞'}</span>
           </div>
@@ -65,6 +73,22 @@ export default function ProfilePage() {
           <span className="tag">POST-PUNK</span>
           <span className="tag">SHIBUYA-KEI</span>
         </section>
+
+        {totalLiked > 0 && (
+          <section className="liked-section">
+            <h2 className="section-title text-mono">❤️ 我喜欢的歌曲 ({totalLiked})</h2>
+            <div className="liked-list">
+              {likedTracks.map((track, idx) => (
+                <div key={`${track.id}-${idx}`} className="liked-item">
+                  <div className="liked-info">
+                    <div className="liked-name">{track.name}</div>
+                    <div className="liked-artist">{track.artist}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <footer className="profile-footer text-mono">
           CHAOSRADIO × MMGUO
@@ -157,6 +181,34 @@ export default function ProfilePage() {
           margin-top: 60px; font-size: 12px;
           color: rgba(255,255,255,0.4); letter-spacing: 1px;
         }
+
+        .section-title {
+          font-size: 16px; font-weight: 700;
+          color: white; margin: 40px 0 20px;
+          letter-spacing: 1px;
+        }
+
+        .liked-list {
+          display: flex; flex-direction: column; gap: 12px;
+        }
+
+        .liked-item {
+          display: flex; align-items: center;
+          padding: 12px 16px;
+          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 12px;
+          transition: all 0.2s;
+        }
+
+        .liked-item:hover {
+          background: rgba(255,255,255,0.06);
+          border-color: rgba(255,255,255,0.15);
+        }
+
+        .liked-info { display: flex; flex-direction: column; gap: 4px; }
+        .liked-name { font-size: 14px; color: white; font-weight: 500; }
+        .liked-artist { font-size: 12px; color: rgba(255,255,255,0.5); }
 
         @media (min-width: 768px) {
           .profile-container { padding: 40px 48px 80px; }
