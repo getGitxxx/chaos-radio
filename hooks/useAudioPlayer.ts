@@ -283,8 +283,8 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
     });
   }, []);
 
-  const playTTS = useCallback(async (url: string): Promise<void> => {
-    if (!ttsAudioRef.current) return;
+  const playTTS = useCallback(async (url: string): Promise<boolean> => {
+    if (!ttsAudioRef.current) return false;
 
     const mainAudio = audioRef.current;
     const originalVol = userVolumeRef.current;
@@ -311,7 +311,7 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
     ttsAudioRef.current.src = url;
 
     return new Promise((resolve) => {
-      if (!ttsAudioRef.current) { resolve(); return; }
+      if (!ttsAudioRef.current) { resolve(false); return; }
 
       const onEnd = () => {
         setState((prev) => ({ ...prev, isTTSPlaying: false }));
@@ -322,7 +322,7 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
         if (mainAudio) {
           fadeVolume(mainAudio, originalVol, 1500);
         }
-        resolve();
+        resolve(true);
       };
 
       ttsAudioRef.current.addEventListener('ended', onEnd);
@@ -332,7 +332,15 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
       if (playPromise !== undefined) {
         playPromise.catch((e) => {
           console.warn('TTS play interrupted:', e.message);
-          onEnd();
+          // If autoplay is blocked, return false
+          if (e.name === 'NotAllowedError') {
+            setState((prev) => ({ ...prev, isTTSPlaying: false }));
+            ttsAudioRef.current?.removeEventListener('ended', onEnd);
+            ttsAudioRef.current?.removeEventListener('error', onEnd);
+            resolve(false); // Signal autoplay blocked
+          } else {
+            onEnd();
+          }
         });
       }
     });

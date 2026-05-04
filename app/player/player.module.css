@@ -857,3 +857,79 @@
     transform: scaleY(0.4);
   }
 }
+
+/* ===== Loading Stages Indicator ===== */
+.loadingStages {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.stageDivider {
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 10px;
+}
+
+.stagePending {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.stageActive {
+  color: #00ff66;
+  text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
+  animation: stagePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes stagePulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* ===== Autoplay Blocked Prompt Button ===== */
+.playPromptBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, rgba(0, 255, 102, 0.15), rgba(0, 150, 255, 0.15));
+  border: 1px solid rgba(0, 255, 102, 0.4);
+  border-radius: 24px;
+  color: #00ff66;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
+  animation: promptGlow 2s ease-in-out infinite;
+}
+
+.playPromptBtn:hover {
+  background: linear-gradient(135deg, rgba(0, 255, 102, 0.25), rgba(0, 150, 255, 0.25));
+  border-color: #00ff66;
+  box-shadow: 0 0 30px rgba(0, 255, 102, 0.4);
+  transform: scale(1.05);
+}
+
+.playPromptBtn svg {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes promptGlow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(0, 255, 102, 0.4);
+  }
+}

@@ -27,11 +27,13 @@ export default function PlayerPage() {
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<'idle' | 'selecting' | 'resolving' | 'ready'>('idle');
   const [djMessage, setDjMessage] = useState('Always here, spinning through the night. What\'s next on your mind?');
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'dj'; content: string }[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [time, setTime] = useState(new Date());
   const [mounted, setMounted] = useState(false);
   const [uiHidden, setUiHidden] = useState(false);
@@ -109,7 +111,15 @@ export default function PlayerPage() {
     const requirement = chatInput.trim();
     setUiHidden(true);
     setLoading(true);
-    setDjMessage(requirement ? `Generating playlist for: "${requirement}"...` : 'Generating new playlist...');
+    setLoadingStage('selecting');
+    setDjMessage(requirement ? `正在为你挑选「${requirement}」相关的歌曲...` : 'DJ 正在选歌...');
+    
+    // Stage 1: Selecting songs (simulate progress)
+    const stage1Timer = setTimeout(() => {
+      setLoadingStage('resolving');
+      setDjMessage('正在解析曲目，准备串场词...');
+    }, 2000);
+
     try {
       const recent = getRecentNames();
       const res = await fetch('/api/plan', {
@@ -125,44 +135,124 @@ export default function PlayerPage() {
       if (!json.success || !json.data) throw new Error('API failed');
       const data: PlaylistPlan = json.data;
 
+      clearTimeout(stage1Timer);
+      setLoadingStage('ready');
+      setDjMessage('即将开始播放...');
+
       playedIntrosRef.current.clear();
       preloadRef.current = false;
       player.setPlaylist(data.tracks, 0);
       setDjMessage(data.djMessage);
       setChatMessages(prev => [...prev, { role: 'dj', content: data.djMessage }]);
-      player.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
+      
+      // Try to play TTS, handle autoplay block
+      const ttsSuccess = await player.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
+      if (!ttsSuccess) {
+        setAutoplayBlocked(true);
+        setDjMessage('点击播放按钮开始收听 🎧');
+      } else {
+        setAutoplayBlocked(false);
+      }
+      
       localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
       if (requirement) setChatInput('');
     } catch (e) {
-      setDjMessage('Signal lost. Try again.');
+      clearTimeout(stage1Timer);
+      setDjMessage('信号丢失，再试一次？');
     } finally {
       setLoading(false);
+      setLoadingStage('idle');
     }
   }, [chatInput, getRecentNames, likedTracks, player]);
 
-  // Load from cache on mount
+  // Load from cache on mount - auto generate playlist
   useEffect(() => {
     if (initialized) return;
     setInitialized(true);
     const loadPlan = async () => {
       setLoading(true);
+      setLoadingStage('selecting');
+      setDjMessage('DJ 正在选歌...');
+      
+      // Stage transition
+      const stageTimer = setTimeout(() => {
+        setLoadingStage('resolving');
+        setDjMessage('正在解析曲目，准备串场词...');
+      }, 2500);
+
       try {
         const cachedStr = localStorage.getItem('chaos-radio-cache');
         if (cachedStr) {
           const data: PlaylistPlan = JSON.parse(cachedStr);
-          setDjMessage(data.djMessage);
+          clearTimeout(stageTimer);
+          setLoadingStage('ready');
+          setDjMessage('即将开始播放...');
+          
           setChatMessages([{ role: 'dj', content: data.djMessage }]);
           playedIntrosRef.current.clear();
           preloadRef.current = false;
           player.setPlaylist(data.tracks, 0);
-          player.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
+          setDjMessage(data.djMessage);
+          
+          // Try to play, handle autoplay block
+          const ttsSuccess = await player.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
+          if (!ttsSuccess) {
+            setAutoplayBlocked(true);
+            setDjMessage('点击播放按钮开始收听 🎧');
+          } else {
+            setAutoplayBlocked(false);
+          }
         } else {
-          await handleGeneratePlaylist();
+          // No cache - generate new playlist with stage transitions
+          const recent = getRecentNames();
+          const res = await fetch('/api/plan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              recent,
+              liked: Object.keys(likedTracks),
+              prompt: ''
+            })
+          });
+          const json = await res.json();
+          
+          clearTimeout(stageTimer);
+          
+          if (json.success && json.data) {
+            setLoadingStage('ready');
+            setDjMessage('即将开始播放...');
+            
+            const data: PlaylistPlan = json.data;
+            playedIntrosRef.current.clear();
+            preloadRef.current = false;
+            player.setPlaylist(data.tracks, 0);
+            setDjMessage(data.djMessage);
+            setChatMessages([{ role: 'dj', content: data.djMessage }]);
+            
+            // Try to play, handle autoplay block
+            const ttsSuccess = await player.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
+            if (!ttsSuccess) {
+              setAutoplayBlocked(true);
+              setDjMessage('点击播放按钮开始收听 🎧');
+            } else {
+              setAutoplayBlocked(false);
+            }
+            
+            localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
+          } else {
+            setDjMessage('信号丢失，点击生成按钮重试');
+          }
         }
-      } catch (e) { } finally { setLoading(false); }
+      } catch (e) {
+        clearTimeout(stageTimer);
+        setDjMessage('信号中断，点击生成按钮重试');
+      } finally {
+        setLoading(false);
+        setLoadingStage('idle');
+      }
     };
     loadPlan();
-  }, [initialized, handleGeneratePlaylist, player]);
+  }, [initialized, player, getRecentNames, likedTracks]);
 
   // Dragging logic
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -445,6 +535,21 @@ export default function PlayerPage() {
                 <div className={s.bubbleWrap}>
                   <div className={s.bubble}>
                     {djMessage}
+                    {loading && loadingStage !== 'idle' && (
+                      <div className={s.loadingStages}>
+                        <span className={loadingStage === 'selecting' ? s.stageActive : s.stagePending}>选歌</span>
+                        <span className={s.stageDivider}>→</span>
+                        <span className={loadingStage === 'resolving' ? s.stageActive : s.stagePending}>解析</span>
+                        <span className={s.stageDivider}>→</span>
+                        <span className={loadingStage === 'ready' ? s.stageActive : s.stagePending}>播放</span>
+                      </div>
+                    )}
+                    {autoplayBlocked && !loading && (
+                      <button className={s.playPromptBtn} onClick={() => player.togglePlay()}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                        点击开始播放
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
