@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- 背景渐变 -->
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0a1628"/>
+      <stop offset="100%" stop-color="#050814"/>
+    </radialGradient>
+    
+    <!-- C 字母渐变 -->
+    <linearGradient id="cGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ff66"/>
+      <stop offset="100%" stop-color="#00cc52"/>
+    </linearGradient>
+    
+    <!-- 发光滤镜 -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="glowStrong">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- 唱片刻纹渐变 -->
+    <linearGradient id="groove" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00ff66" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#00ff66" stop-opacity="0.02"/>
+      <stop offset="100%" stop-color="#00ff66" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- 圆形背景 -->
+  <circle cx="256" cy="256" r="256" fill="url(#bg)"/>
+  
+  <!-- 唱片刻纹（同心圆） -->
+  <circle cx="256" cy="256" r="230" fill="none" stroke="url(#groove)" stroke-width="1"/>
+  <circle cx="256" cy="256" r="215" fill="none" stroke="url(#groove)" stroke-width="1"/>
+  <circle cx="256" cy="256" r="200" fill="none" stroke="url(#groove)" stroke-width="1"/>
+  <circle cx="256" cy="256" r="185" fill="none" stroke="url(#groove)" stroke-width="1"/>
+  <circle cx="256" cy="256" r="170" fill="none" stroke="url(#groove)" stroke-width="1"/>
+  
+  <!-- Radio waves 右半 -->
+  <path d="M 256 90 A 166 166 0 0 1 422 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.25"/>
+  <path d="M 256 60 A 196 196 0 0 1 452 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.15"/>
+  <path d="M 256 30 A 226 226 0 0 1 482 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.08"/>
+  
+  <!-- Radio waves 左半 -->
+  <path d="M 256 90 A 166 166 0 0 0 90 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.25"/>
+  <path d="M 256 60 A 196 196 0 0 0 60 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.15"/>
+  <path d="M 256 30 A 226 226 0 0 0 30 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.08"/>
+  
+  <!-- Radio waves 下半 -->
+  <path d="M 256 422 A 166 166 0 0 0 422 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.25"/>
+  <path d="M 256 452 A 196 196 0 0 0 452 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.15"/>
+  <path d="M 256 482 A 226 226 0 0 0 482 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.08"/>
+  
+  <path d="M 256 422 A 166 166 0 0 1 90 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.25"/>
+  <path d="M 256 452 A 196 196 0 0 1 60 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.15"/>
+  <path d="M 256 482 A 226 226 0 0 1 30 256" fill="none" stroke="#00ff66" stroke-width="3" stroke-linecap="round" opacity="0.08"/>
+  
+  <!-- C 字母发光层 -->
+  <path d="M 355 175 
+           A 125 125 0 1 0 355 337 
+           L 355 290 
+           A 75 75 0 1 1 355 222 
+           Z" 
+        fill="url(#cGreen)" filter="url(#glow)" opacity="0.5"/>
+  
+  <!-- C 字母主体 -->
+  <path d="M 355 175 
+           A 125 125 0 1 0 355 337 
+           L 355 290 
+           A 75 75 0 1 1 355 222 
+           Z" 
+        fill="url(#cGreen)"/>
+  
+  <!-- 中心轴心 -->
+  <circle cx="256" cy="256" r="16" fill="#050814" stroke="#00ff66" stroke-width="2" filter="url(#glowStrong)"/>
+  <circle cx="256" cy="256" r="14" fill="#050814"/>
+  <circle cx="256" cy="256" r="5" fill="#00ff66" filter="url(#glowStrong)"/>
+  <circle cx="256" cy="256" r="3" fill="#00ff66"/>
+</svg>

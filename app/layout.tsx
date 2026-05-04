@@ -35,7 +35,6 @@ export const metadata: Metadata = {
     'Personal AI radio station that understands your taste, curates playlists, and delivers DJ-style commentary between tracks.',
   icons: {
     icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
       { url: '/favicon.ico', sizes: '16x16 32x32 48x48' },
     ],
     apple: [
