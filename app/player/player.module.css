@@ -525,27 +525,26 @@
 
 /* ===== Queue Section ===== */
 .queueSection {
-  flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  border-bottom: none;
-  padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 100, 255, 0.2);
+  padding: 6px 0;
 }
 
 .queueHeader {
   display: flex;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 20px 4px;
   font-size: 10px;
   color: rgba(255, 255, 255, 0.4);
   letter-spacing: 2px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   flex-shrink: 0;
 }
 
 .queueList {
   overflow-y: auto;
-  flex: 1;
+  max-height: 290px;
+  -ms-overflow-style: none;
   scrollbar-width: none;
 }
 
@@ -644,12 +643,12 @@
   border-top: 1px solid rgba(0, 255, 102, 0.2);
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
   
-  padding: 0 16px;
+  padding: 0 8px;
   padding-bottom: env(safearea-inset-bottom);
-  padding-top: 12px;
+  padding-top: 6px;
   display: flex;
   flex-direction: column;
-  min-height: 80px; /* Compact state: Input bar only */
+  min-height: 60px;
   transition: min-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
