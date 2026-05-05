@@ -25,6 +25,7 @@ export async function buildContext(options: {
   skipSignals?: string[];
   replaySignals?: string[];
 }): Promise<string> {
+  const t0 = Date.now();
   const fragments: string[] = [];
 
   // ① System persona (with style override if specified)
@@ -59,6 +60,7 @@ export async function buildContext(options: {
 
   let tasteProfile = '';
   try {
+    const tTaste = Date.now();
     const { sampleFavorites } = await import('./ncm');
     const favorites = await sampleFavorites(50);
     if (likedPlays.length + dislikedPlays.length + favorites.length >= 10) {
@@ -68,6 +70,7 @@ export async function buildContext(options: {
         favorites,
       });
     }
+    console.log(`[Context] tasteProfile: ${Date.now() - tTaste}ms (${tasteProfile ? 'generated' : 'skipped'})`);
   } catch {
     // Taste profile is optional — falls back to raw data
   }
@@ -91,7 +94,9 @@ export async function buildContext(options: {
   let envContext = `## 当前环境\n- 时间: ${now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n- 时段: ${timeOfDay}`;
 
   try {
+    const tWeather = Date.now();
     const weather = await getCurrentWeather();
+    console.log(`[Context] weather: ${Date.now() - tWeather}ms (${weather ? 'ok' : 'null'})`);
     if (weather) {
       envContext += `\n- 天气: ${weather.city} ${weather.description} ${weather.temp}°C`;
     }
@@ -109,8 +114,10 @@ export async function buildContext(options: {
 
   // ⑥ User favorites (from NCM playlists)
   try {
+    const tFav = Date.now();
     const { sampleFavorites } = await import('./ncm');
     const favorites = await sampleFavorites(30);
+    console.log(`[Context] sampleFavorites: ${Date.now() - tFav}ms (${favorites.length} tracks)`);
     if (favorites.length > 0) {
       const favList = favorites.join('\n- ');
       fragments.push(
@@ -121,36 +128,33 @@ export async function buildContext(options: {
     // Favorites are optional
   }
 
-  // ⑦ Disliked tracks - avoid these
   if (dislikedPlays.length > 0) {
     const dislikes = dislikedPlays.join('\n- ');
     fragments.push(`## 用户不喜欢的歌曲\n以下歌曲是用户明确表示不喜欢的。请**绝对避免**推荐这些歌曲，以及风格相近的作品。\n- ${dislikes}`);
   }
 
-  // ⑧ Behavior signals: implicit dislike from fast skips
   if (options.skipSignals && options.skipSignals.length > 0) {
     const skips = options.skipSignals.slice(0, 15).join('\n- ');
     fragments.push(`## 秒跳信号\n以下歌曲用户在播放不到 30 秒就跳过了（隐式不喜欢），请倾向于避免这些风格：\n- ${skips}`);
   }
 
-  // ⑨ Behavior signals: replay signals (implicit super-like)
   if (options.replaySignals && options.replaySignals.length > 0) {
     const replays = options.replaySignals.join('\n- ');
     fragments.push(`## 重播信号\n以下歌曲用户在 24 小时内反复播放了多次（隐式超级喜欢），请优先推荐这些歌曲或风格相近的作品：\n- ${replays}`);
   }
 
-  // ⑩ Mood hint
   if (options.mood) {
     fragments.push(`## 用户当前心情提示\n${options.mood}`);
   }
 
-  // ⑪ Liked tracks
   if (likedPlays.length > 0) {
     const likes = likedPlays.join('\n- ');
     fragments.push(`## 专属置顶红心单曲\n这是用户在此电台中主动点击 Like 标心的超级红心歌曲。生成歌单时，请**务必赋予最高优先级**，尝试从以下歌曲中挑选 1-2 首加入当前播放列表！\n- ${likes}`);
   }
 
-  return fragments.join('\n\n---\n\n');
+  const result = fragments.join('\n\n---\n\n');
+  console.log(`[Context] TOTAL buildContext: ${Date.now() - t0}ms (${result.length} chars)`);
+  return result;
 }
 
 function getTimeOfDay(hour: number): string {

@@ -71,23 +71,34 @@ export class DJService {
    */
   async generatePlaylist(options: GeneratePlaylistOptions): Promise<PlaylistResult> {
     const { prompt, count = 5, ...contextOptions } = options;
+    const t0 = Date.now();
 
     // 1. Build context
+    const t1 = Date.now();
     const systemPrompt = await buildContext({ ...contextOptions });
+    console.log(`[DJService] buildContext: ${Date.now() - t1}ms`);
 
     // 2. Ask LLM
+    const t2 = Date.now();
     const userMessage = prompt
       ? `请根据我的特定要求为我生成一个${count}首歌的歌单：${prompt}`
       : `请为我生成一个${count}首歌的歌单，根据当前的时间和环境来选择合适的音乐`;
 
     const djResponse = await callLLM(systemPrompt, userMessage, [], 8000);
+    console.log(`[DJService] callLLM: ${Date.now() - t2}ms`);
 
     // 3. Resolve tracks
+    const t3 = Date.now();
     const playItems = Array.isArray(djResponse.play) ? djResponse.play.slice(0, count) : [];
     const tracks = await this._resolveTracksWithIntros(playItems);
+    console.log(`[DJService] resolveTracks (${tracks.length}/${playItems.length}): ${Date.now() - t3}ms`);
 
     // 4. Synthesize speech
+    const t4 = Date.now();
     const ttsUrl = djResponse.say ? await synthesizeSpeech(djResponse.say) : null;
+    console.log(`[DJService] synthesizeSpeech: ${Date.now() - t4}ms`);
+
+    console.log(`[DJService] TOTAL generatePlaylist: ${Date.now() - t0}ms`);
 
     return {
       tracks,

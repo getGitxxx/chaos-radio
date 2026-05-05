@@ -134,8 +134,12 @@ export async function getSongDetail(id: number): Promise<Track | null> {
  * Search for a song and return a fully resolved Track with URL, cover, and lyrics.
  */
 export async function resolveTrack(query: string): Promise<Track | null> {
+  const t0 = Date.now();
   const results = await searchSongs(query, 1);
-  if (results.length === 0) return null;
+  if (results.length === 0) {
+    console.log(`[NCM] resolveTrack "${query}" → 0 results`);
+    return null;
+  }
 
   const match = results[0];
   const [url, lyrics, detail] = await Promise.all([
@@ -144,8 +148,12 @@ export async function resolveTrack(query: string): Promise<Track | null> {
     getSongDetail(match.id),
   ]);
 
-  if (!url) return null;
+  if (!url) {
+    console.log(`[NCM] resolveTrack "${query}" → no URL (${Date.now() - t0}ms)`);
+    return null;
+  }
 
+  console.log(`[NCM] resolveTrack "${match.name}" → ${Date.now() - t0}ms`);
   return {
     id: match.id,
     name: match.name,

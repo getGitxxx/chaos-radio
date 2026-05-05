@@ -29,6 +29,7 @@ async function fetchAndApplyPlaylist(
     onAutoplayResult: (blocked: boolean) => void;
   }
 ): Promise<PlaylistPlan | null> {
+  const t0 = Date.now();
   const res = await fetch('/api/plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -36,6 +37,7 @@ async function fetchAndApplyPlaylist(
     signal: options.signal,
   });
   const json = await res.json();
+  console.log(`[Fetch] /api/plan response: ${Date.now() - t0}ms`);
   if (!json.success || !json.data) {
     throw new Error(json.error || 'API failed');
   }
@@ -43,7 +45,6 @@ async function fetchAndApplyPlaylist(
   const data: PlaylistPlan = json.data;
 
   if (options.clearCache) {
-    // Clear played intros tracking via playerRef
     playerRef.current?.setPlaylist(data.tracks, 0);
   } else {
     playerMethods.setPlaylist(data.tracks, 0);
@@ -52,9 +53,11 @@ async function fetchAndApplyPlaylist(
   options.onDJMessage(data.djMessage);
   options.onChatMessage({ role: 'dj', content: data.djMessage });
 
+  const tTTS = Date.now();
   const ttsSuccess = await playerMethods.playTTS(
     `/api/tts?text=${encodeURIComponent(data.djMessage)}`
   );
+  console.log(`[Fetch] playTTS: ${Date.now() - tTTS}ms (success: ${ttsSuccess})`);
   options.onAutoplayResult(!ttsSuccess);
 
   localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
@@ -352,6 +355,7 @@ export default function PlayerPage() {
   useEffect(() => {
     if (initialized) return;
     setInitialized(true);
+    const tInit = Date.now();
 
     const loadPlan = async () => {
       setLoading(true);
@@ -366,6 +370,7 @@ export default function PlayerPage() {
       try {
         const cachedStr = localStorage.getItem('chaos-radio-cache');
         if (cachedStr) {
+          console.log(`[Init] Loading from cache (${Date.now() - tInit}ms to start)`);
           const data: PlaylistPlan = JSON.parse(cachedStr);
           clearTimeout(stageTimer);
           setLoadingStage('ready');
@@ -386,13 +391,16 @@ export default function PlayerPage() {
           } else {
             setAutoplayBlocked(false);
           }
+          console.log(`[Init] Cache path done (${Date.now() - tInit}ms total)`);
         } else {
+          console.log(`[Init] No cache, fetching from API (${Date.now() - tInit}ms to start)`);
           const p = playerMethodsRef.current;
           if (p) {
             const controller = new AbortController();
             const initTimeout = setTimeout(() => controller.abort(), 10000);
 
             try {
+              const tFetch = Date.now();
               await fetchAndApplyPlaylist(
                 {
                   recentPlays: getRecentNames(),
@@ -422,6 +430,7 @@ export default function PlayerPage() {
                 }
               );
               clearTimeout(initTimeout);
+              console.log(`[Init] fetchAndApplyPlaylist done (${Date.now() - tInit}ms total)`);
             } catch (e) {
               clearTimeout(initTimeout);
               // Fallback: Play builtin tracks
