@@ -43,13 +43,15 @@ export async function POST() {
     });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    const isTimeout = errMsg.includes('timed out');
+    const isTimeout = errMsg.includes('deadline') || errMsg.includes('timed out');
 
     console.error('[Favorites] Sync error:', errMsg);
     return NextResponse.json(
       {
         success: false,
-        error: isTimeout ? '同步超时，请稍后重试（NCM API 响应较慢）' : '同步失败，请确保 NCM 环境变量配置正确',
+        error: isTimeout
+          ? '同步部分完成（NCM API 响应较慢）。已缓存的数据会在下次推荐时生效。'
+          : '同步失败，请确保 NCM 环境变量配置正确',
       },
       { status: isTimeout ? 504 : 500 }
     );
