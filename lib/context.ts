@@ -64,7 +64,7 @@ export async function buildContext(options: {
   try {
     const tTaste = Date.now();
     const { sampleFavorites } = await import('./ncm');
-    favoritesSample = await sampleFavorites(50);
+    favoritesSample = await sampleFavorites(200);
     if (likedPlays.length + dislikedPlays.length + favoritesSample.length >= 10) {
       tasteProfile = await getCachedTasteProfile({
         liked: likedPlays,
@@ -119,15 +119,23 @@ export async function buildContext(options: {
     fragments.push(`## 禁止重复推荐 (Negative Constraints)\n以下歌曲是用户最近听过的或已经在播放队列中的。**绝对禁止**再次推荐这些具体的歌曲：\n- ${forbidden}`);
   }
 
-  // ⑥ User favorites (from NCM playlists)
+  // ⑥ User favorites (from NCM playlists) & Anchor Seeds
   try {
-    const favSlice = favoritesSample.slice(0, 30);
-    console.log(`[Context] favorites: ${Date.now() - t0}ms (${favSlice.length} tracks from cached sample)`);
+    const favSlice = favoritesSample;
+    console.log(`[Context] favorites: ${Date.now() - t0}ms (${favSlice.length} tracks)`);
     if (favSlice.length > 0) {
-      const favList = favSlice.join('\n- ');
-      fragments.push(
-        `## 用户收藏歌单（随机采样）\n以下是用户在网易云音乐中收藏的部分歌曲。推荐歌曲时，优先从这个列表中选择，但也可以推荐风格相近的新歌。\n- ${favList}`
-      );
+      // Pick 5 random anchors for targeted discovery
+      const shuffled = [...favSlice].sort(() => 0.5 - Math.random());
+      const anchors = shuffled.slice(0, 5);
+      const remaining = shuffled.slice(5, 85);
+
+      fragments.push(`## 推荐锚点 (Discovery Seeds)
+以下是用户收藏中的 5 首随机采样作为本次生成的“种子”。请针对每一首，挖掘 1 首风格深度契合、但相对冷门的“宝藏歌曲”：
+- ${anchors.join('\n- ')}
+
+## 更多品味参考
+以下是用户其他的收藏列表，用于辅助理解其审美广度：
+${remaining.join('; ')}`);
     }
   } catch {
     // Favorites are optional
@@ -168,9 +176,11 @@ export async function buildContext(options: {
   ) && options.userMessage.length > 4;
 
   fragments.push(`## 动态推荐策略
-1. **探索优先**：在自动播放模式下，请执行 "3+2" 策略：至少 3 首风格相近的新歌（探索），最多 2 首用户熟悉的红心/收藏歌曲（复习）。
-2. **艺人多样性**：${hasSpecificIntent ? '由于用户提供了具体的听歌指令，你可以根据指令推荐同一艺人的多首歌曲。' : '在自动推荐模式下，单次生成的 5 首歌中应避免出现同一艺人的多首作品，除非他们是多位艺人的合作曲。'}
-3. **意图尊重**：如果用户指令中提到了具体的艺人、专辑或风格，请以此为绝对中心进行推荐，此时可以忽略上述的频率和多样性限制。`);
+1. **探索优先 (3+2 策略)**：5 首歌中，至少 3 首应是用户未听过的“深度发现”，最多 2 首来自红心/收藏。
+2. **拒绝平庸**：除非用户明确点名，否则禁止推荐大众口水歌、短视频神曲或毫无营养的商业流行乐。
+3. **锚点驱动**：请优先针对上面的“推荐锚点”进行联想，在 \`reason\` 中注明该歌曲是基于哪个锚点推荐的。
+4. **艺人多样性**：${hasSpecificIntent ? '由于用户提供了具体的听歌指令，你可以根据指令推荐同一艺人的多首歌曲。' : '在自动推荐模式下，单次生成的 5 首歌中应避免出现同一艺人的多首作品。'}
+5. **意图尊重**：如果用户指令中提到了具体的艺人、专辑或风格，请以此为绝对中心进行推荐，忽略多样性限制。`);
 
   const result = fragments.join('\n\n---\n\n');
   console.log(`[Context] TOTAL buildContext: ${Date.now() - t0}ms (${result.length} chars)`);
