@@ -14,7 +14,7 @@ const djService = new DJService();
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { mood, prompt, count = 5, recentPlays = [], likedPlays = [], dislikedPlays = [], tasteOverride, djStyle } = body;
+    const { mood, prompt, count = 5, recentPlays = [], likedPlays = [], dislikedPlays = [], skipSignals, replaySignals, tasteOverride, djStyle } = body;
 
     const result = await djService.generatePlaylist({
       prompt: prompt || mood,
@@ -22,6 +22,8 @@ export async function POST(request: Request) {
       recentPlays,
       likedPlays,
       dislikedPlays,
+      skipSignals: Array.isArray(skipSignals) ? skipSignals : [],
+      replaySignals: Array.isArray(replaySignals) ? replaySignals : [],
       tasteOverride,
       djStyle,
     });

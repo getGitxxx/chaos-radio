@@ -4,10 +4,8 @@ import routines from '@/user/routines.md';
 import moodRules from '@/user/mood-rules.md';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { getTasteProfile } from './taste-profile';
 
-/**
- * DJ style presets that modify the persona behavior.
- */
 const DJ_STYLES: Record<string, string> = {
   '文艺范': '- 你是一个文艺范儿的 DJ，说话像诗人一样，善用隐喻和意象，语气温柔有深度',
   '深夜电台': '- 你是一个深夜电台主持人，声音温暖有磁性，语气亲切像老朋友，适合夜晚陪伴',
@@ -16,13 +14,6 @@ const DJ_STYLES: Record<string, string> = {
   '治愈': '- 你是一个治愈系 DJ，说话温柔体贴，会关心用户的情绪，像一个温暖的拥抱',
 };
 
-/**
- * Build the full system prompt for the DJ persona.
- * Assembles fragments into a coherent context window.
- * 
- * @param tasteOverride - If provided, overrides static taste.md content
- * @param djStyle - DJ persona style preset
- */
 export async function buildContext(options: {
   recentPlays?: string[];
   userMessage?: string;
@@ -31,13 +22,14 @@ export async function buildContext(options: {
   dislikedPlays?: string[];
   tasteOverride?: string;
   djStyle?: string;
+  skipSignals?: string[];
+  replaySignals?: string[];
 }): Promise<string> {
   const fragments: string[] = [];
 
   // ① System persona (with style override if specified)
   let personaText = persona.trim();
   if (options.djStyle && DJ_STYLES[options.djStyle]) {
-    // Insert style hint after the persona title
     const lines = personaText.split('\n');
     const insertIdx = lines.findIndex(l => l.startsWith('## 你的风格'));
     if (insertIdx !== -1) {
@@ -61,11 +53,37 @@ export async function buildContext(options: {
   const r = routines.trim();
   const m = moodRules.trim();
 
-  if (tasteContent) fragments.push(`## 用户品味\n${tasteContent}`);
+  // ---- Generate AI-powered taste profile if enough data available ----
+  const likedPlays = options.likedPlays ?? [];
+  const dislikedPlays = options.dislikedPlays ?? [];
+
+  let tasteProfile = '';
+  try {
+    const { sampleFavorites } = await import('./ncm');
+    const favorites = await sampleFavorites(50);
+    if (likedPlays.length + dislikedPlays.length + favorites.length >= 10) {
+      tasteProfile = await getTasteProfile({
+        liked: likedPlays,
+        disliked: dislikedPlays,
+        favorites,
+      });
+    }
+  } catch {
+    // Taste profile is optional — falls back to raw data
+  }
+
+  // ③ Taste section: prefer AI-generated profile, fall back to raw taste.md
+  if (tasteProfile) {
+    fragments.push(`## AI 品味画像\n${tasteProfile}\n\n注意：这是根据你听歌行为自动分析的音乐品味，请重点参考此画像进行推荐。`);
+  }
+  if (tasteContent) {
+    const label = tasteProfile ? '## 用户自述品味' : '## 用户品味';
+    fragments.push(`${label}\n${tasteContent}`);
+  }
   if (r) fragments.push(`## 时段偏好\n${r}`);
   if (m) fragments.push(`## 情绪规则\n${m}`);
 
-  // ③ Environment injection
+  // ④ Environment injection
   const now = new Date();
   const hour = now.getHours();
   const timeOfDay = getTimeOfDay(hour);
@@ -83,13 +101,13 @@ export async function buildContext(options: {
 
   fragments.push(envContext);
 
-  // ④ Play history
+  // ⑤ Play history
   if (options.recentPlays && options.recentPlays.length > 0) {
     const recent = options.recentPlays.slice(-10).join('\n- ');
     fragments.push(`## 最近播放\n- ${recent}\n\n注意避免重复推荐这些歌曲，除非用户明确要求。`);
   }
 
-  // ⑤ User favorites (from NCM playlists)
+  // ⑥ User favorites (from NCM playlists)
   try {
     const { sampleFavorites } = await import('./ncm');
     const favorites = await sampleFavorites(30);
@@ -103,20 +121,32 @@ export async function buildContext(options: {
     // Favorites are optional
   }
 
-  // ⑥ Disliked tracks - avoid these
-  if (options.dislikedPlays && options.dislikedPlays.length > 0) {
-    const dislikes = options.dislikedPlays.join('\n- ');
+  // ⑦ Disliked tracks - avoid these
+  if (dislikedPlays.length > 0) {
+    const dislikes = dislikedPlays.join('\n- ');
     fragments.push(`## 用户不喜欢的歌曲\n以下歌曲是用户明确表示不喜欢的。请**绝对避免**推荐这些歌曲，以及风格相近的作品。\n- ${dislikes}`);
   }
 
-  // ⑦ Mood hint
+  // ⑧ Behavior signals: implicit dislike from fast skips
+  if (options.skipSignals && options.skipSignals.length > 0) {
+    const skips = options.skipSignals.slice(0, 15).join('\n- ');
+    fragments.push(`## 秒跳信号\n以下歌曲用户在播放不到 30 秒就跳过了（隐式不喜欢），请倾向于避免这些风格：\n- ${skips}`);
+  }
+
+  // ⑨ Behavior signals: replay signals (implicit super-like)
+  if (options.replaySignals && options.replaySignals.length > 0) {
+    const replays = options.replaySignals.join('\n- ');
+    fragments.push(`## 重播信号\n以下歌曲用户在 24 小时内反复播放了多次（隐式超级喜欢），请优先推荐这些歌曲或风格相近的作品：\n- ${replays}`);
+  }
+
+  // ⑩ Mood hint
   if (options.mood) {
     fragments.push(`## 用户当前心情提示\n${options.mood}`);
   }
 
-  // ⑧ Liked tracks
-  if (options.likedPlays && options.likedPlays.length > 0) {
-    const likes = options.likedPlays.join('\n- ');
+  // ⑪ Liked tracks
+  if (likedPlays.length > 0) {
+    const likes = likedPlays.join('\n- ');
     fragments.push(`## 专属置顶红心单曲\n这是用户在此电台中主动点击 Like 标心的超级红心歌曲。生成歌单时，请**务必赋予最高优先级**，尝试从以下歌曲中挑选 1-2 首加入当前播放列表！\n- ${likes}`);
   }
 

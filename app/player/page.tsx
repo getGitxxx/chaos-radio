@@ -7,6 +7,7 @@ import { usePlayHistory } from '../../hooks/usePlayHistory';
 import { useLikedTracks } from '../../hooks/useLikedTracks';
 import { useDislikedTracks } from '../../hooks/useDislikedTracks';
 import { useTouchGestures } from '../../hooks/useTouchGestures';
+import { useBehaviorSignals } from '../../hooks/useBehaviorSignals';
 import type { Track, PlaylistPlan } from '../../lib/types';
 import DotMatrix from '../../components/DotMatrix';
 import s from './player.module.css';
@@ -78,6 +79,7 @@ export default function PlayerPage() {
   const { addPlay, getRecentNames } = usePlayHistory();
   const { toggleLike, isLiked, getLikedIds, getLikedArray } = useLikedTracks();
   const { addDislike, isDisliked, getDislikedIds } = useDislikedTracks();
+  const { recordSkip, recordPlay, getSkipSignals, getReplaySignals } = useBehaviorSignals();
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
@@ -140,6 +142,26 @@ export default function PlayerPage() {
   const { currentTrack, isPlaying, currentTime, duration, playlist: rawPlaylist, currentIndex, isTTSPlaying, lyrics, activeLyricIndex } = player.state || {};
   const playlist = Array.isArray(rawPlaylist) ? rawPlaylist : [];
 
+  // Record play on track change, and skip on manual advance
+  const lastTrackRef = useRef<number | null>(null);
+  const trackLastChangedAtRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    if (currentTrack?.id && currentTrack.id !== lastTrackRef.current) {
+      // Record previous track as potential skip
+      if (lastTrackRef.current && trackLastChangedAtRef.current) {
+        const playedMs = Date.now() - trackLastChangedAtRef.current;
+        if (playedMs < 30000 && playedMs > 1000) {
+          recordSkip({ id: lastTrackRef.current, name: '', artist: '' }, Math.round(playedMs / 1000));
+        }
+      }
+      // Record new track play
+      recordPlay({ id: currentTrack.id, name: currentTrack.name, artist: currentTrack.artist });
+      lastTrackRef.current = currentTrack.id;
+      trackLastChangedAtRef.current = Date.now();
+    }
+  }, [currentTrack?.id, currentTrack?.name, recordPlay, recordSkip]);
+
   // ---- Playlist near-end preloading ----
   const handlePlaylistNearEnd = useCallback(async (currentTrack: Track) => {
     if (preloadRef.current) return;
@@ -161,6 +183,8 @@ export default function PlayerPage() {
           recentPlays: getRecentNames(),
           likedPlays: getLikedIds(),
           dislikedPlays: getDislikedIds(),
+          skipSignals: getSkipSignals(),
+          replaySignals: getReplaySignals(),
           prompt: '继续推荐下一批歌曲，保持当前的音乐风格和情绪连贯。',
           djStyle,
           tasteOverride,
@@ -245,6 +269,8 @@ export default function PlayerPage() {
           recentPlays: getRecentNames(),
           likedPlays: getLikedIds(),
           dislikedPlays: getDislikedIds(),
+          skipSignals: getSkipSignals(),
+          replaySignals: getReplaySignals(),
           prompt: requirement,
           djStyle,
           tasteOverride,
@@ -328,6 +354,8 @@ export default function PlayerPage() {
                 recentPlays: getRecentNames(),
                 likedPlays: getLikedIds(),
                 dislikedPlays: getDislikedIds(),
+                skipSignals: getSkipSignals(),
+                replaySignals: getReplaySignals(),
                 prompt: '',
                 djStyle,
                 tasteOverride,

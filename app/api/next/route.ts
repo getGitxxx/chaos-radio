@@ -14,6 +14,10 @@ export async function GET(request: Request) {
     const dislikedPlaysRaw = searchParams.get('disliked') || '';
     const dislikedPlays = dislikedPlaysRaw ? dislikedPlaysRaw.split('|') : [];
     const djStyle = searchParams.get('djStyle') || '';
+    const skipSignalsRaw = searchParams.get('skips') || '';
+    const skipSignals = skipSignalsRaw ? skipSignalsRaw.split('|') : [];
+    const replaySignalsRaw = searchParams.get('replays') || '';
+    const replaySignals = replaySignalsRaw ? replaySignalsRaw.split('|') : [];
 
     // Validation
     if (recentPlays.length > 20) {
@@ -28,6 +32,8 @@ export async function GET(request: Request) {
       recentPlays,
       likedPlays,
       dislikedPlays,
+      skipSignals,
+      replaySignals,
       djStyle,
     });
 

@@ -20,6 +20,8 @@ export interface BuildContextOptions {
   recentPlays?: string[];
   likedPlays?: string[];
   dislikedPlays?: string[];
+  skipSignals?: string[];
+  replaySignals?: string[];
   mood?: string;
   tasteOverride?: string;
   djStyle?: string;

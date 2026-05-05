@@ -6,7 +6,7 @@ const djService = new DJService();
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { message, history = [], recentPlays = [], likedPlays = [], dislikedPlays = [], mood, tasteOverride, djStyle } = body;
+    const { message, history = [], recentPlays = [], likedPlays = [], dislikedPlays = [], skipSignals, replaySignals, mood, tasteOverride, djStyle } = body;
 
     // Validation
     if (!message || typeof message !== 'string') {
@@ -29,6 +29,8 @@ export async function POST(request: Request) {
       recentPlays,
       likedPlays,
       dislikedPlays,
+      skipSignals: Array.isArray(skipSignals) ? skipSignals : [],
+      replaySignals: Array.isArray(replaySignals) ? replaySignals : [],
       tasteOverride,
       djStyle,
     });
