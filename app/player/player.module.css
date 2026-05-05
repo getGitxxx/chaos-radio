@@ -679,38 +679,49 @@
   padding-top: 12px;
   display: flex;
   flex-direction: column;
-  min-height: 180px;
-  max-height: 45vh;
+  min-height: 80px; /* Compact state: Input bar only */
+  transition: min-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Keyboard Mode: Hide history & header, compact input */
+/* Expanded State (Bottom Sheet Open) */
+.chatSection.expanded {
+  min-height: 260px;
+}
+
+/* Header & History Transitions */
+.chatHeader,
+.chatHistory {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin-bottom: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chatSection.expanded .chatHeader {
+  max-height: 50px;
+  opacity: 1;
+  margin-bottom: 12px;
+}
+
+.chatSection.expanded .chatHistory {
+  max-height: 400px; /* Allow scrolling within history */
+  opacity: 1;
+  margin-bottom: 16px;
+  overflow-y: auto;
+}
+
+/* Keyboard Mode: Force expand & hide history/header to keep input focused */
 .chatSection.keyboardMode {
-  height: auto;
-  min-height: unset;
-  max-height: unset;
+  min-height: 60px !important; /* Just input bar height */
 }
 
 .chatSection.keyboardMode .chatHeader,
 .chatSection.keyboardMode .chatHistory {
-  display: none !important;
-}
-
-/* Keyboard Mode: Hide history & header, compact input */
-.chatSection.keyboardMode {
-  height: auto; /* Auto height for just input */
-  background: #050814; /* Solid bg when keyboard is up */
-}
-
-.chatSection.keyboardMode .chatHeader,
-.chatSection.keyboardMode .chatHistory {
-  display: none !important;
-}
-
-.chatSection.keyboardMode .inputArea {
-  margin-top: 0;
-  margin-bottom: 8px;
-  border-color: rgba(0, 255, 102, 0.4);
-  box-shadow: 0 0 15px rgba(0, 255, 102, 0.1);
+  max-height: 0 !important;
+  opacity: 0 !important;
+  margin: 0 !important;
+  display: block !important; /* Override display:none from old logic */
 }
 
 .chatHeader {

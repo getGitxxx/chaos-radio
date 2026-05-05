@@ -81,6 +81,25 @@ export default function PlayerPage() {
   const { addDislike, isDisliked, getDislikedIds } = useDislikedTracks();
   const { recordSkip, recordPlay, getSkipSignals, getReplaySignals } = useBehaviorSignals();
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const chatSectionRef = useRef<HTMLDivElement>(null);
+
+  // Pull-up chat state
+  const [isChatExpanded, setIsChatExpanded] = useState(false);
+
+  const handleInputFocus = () => {
+    setIsChatExpanded(true);
+  };
+
+  const handleInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    // Only collapse if focus moves completely outside the chat section
+    // We use a small timeout to allow "click" events to register first
+    setTimeout(() => {
+      const activeEl = document.activeElement;
+      if (!activeEl || !chatSectionRef.current?.contains(activeEl)) {
+        setIsChatExpanded(false);
+      }
+    }, 150);
+  };
 
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState<'idle' | 'selecting' | 'resolving' | 'ready'>('idle');
@@ -649,7 +668,7 @@ export default function PlayerPage() {
         )}
 
         {/* DJ Chat Section */}
-        <div className={`${s.chatSection} ${s.z1} ${isKeyboardVisible ? s.keyboardMode : ''}`} ref={transcriptRef}>
+        <div className={`${s.chatSection} ${s.z1} ${isKeyboardVisible ? s.keyboardMode : ''} ${isChatExpanded ? s.expanded : ''}`} ref={chatSectionRef}>
           <div className={`${s.chatHeader} ${s.mono}`}>
             <div className={s.chatBrand}><div className={s.brandDot}></div>ChaosRadio</div>
             <div className={s.visualizer}>
@@ -717,15 +736,16 @@ export default function PlayerPage() {
           </div>
 
           <div className={s.inputArea}>
-            <button className={s.actionBtn} onClick={handleGeneratePlaylist} disabled={loading} title="Generate new playlist based on input">
-              {loading ? (<div className={s.miniLoader}></div>) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3l1.912 5.813L21 12l-7.088 3.187L12 21l-1.912-5.813L3 12l7.088-3.187z" />
-                </svg>
-              )}
-            </button>
-            <input className={`${s.inputBox} ${s.mono}`} placeholder="Suggest a mood, theme, or genre..." value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleChat()} />
+              <button className={s.actionBtn} onClick={() => { handleInputFocus(); handleGeneratePlaylist(); }} disabled={loading} title="Generate new playlist based on input">
+                {loading ? (<div className={s.miniLoader}></div>) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3l1.912 5.813L21 12l-7.088 3.187L12 21l-1.912-5.813L3 12l7.088-3.187z" />
+                  </svg>
+                )}
+              </button>
+              <input className={`${s.inputBox} ${s.mono}`} placeholder="Suggest a mood, theme, or genre..." value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleChat()}
+                onFocus={handleInputFocus} onBlur={handleInputBlur} />
             <button className={s.iconBtn} onClick={handleChat} disabled={chatLoading}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
             </button>
