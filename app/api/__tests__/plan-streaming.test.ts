@@ -22,8 +22,8 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('POST /api/plan streaming', () => {
-  it('should return JSON when client does not accept SSE', async () => {
+describe('POST /api/plan', () => {
+  it('should return JSON playlist response', async () => {
     const { POST } = await import('../plan/route');
 
     const request = new Request('http://localhost/api/plan', {
@@ -33,14 +33,14 @@ describe('POST /api/plan streaming', () => {
     });
 
     const response = await POST(request);
-    const data = await (response as any).json();
+    const data = await response.json();
 
     expect(data.success).toBe(true);
     expect(data.data.tracks).toHaveLength(2);
     expect(data.data.djMessage).toBe('Welcome to the show');
   });
 
-  it('should return SSE stream when client accepts text/event-stream', async () => {
+  it('should always return application/json (SSE was removed)', async () => {
     const { POST } = await import('../plan/route');
 
     const request = new Request('http://localhost/api/plan', {
@@ -50,27 +50,11 @@ describe('POST /api/plan streaming', () => {
     });
 
     const response = await POST(request);
+    const data = await response.json();
 
-    expect(response.headers.get('Content-Type')).toBe('text/event-stream');
-    expect(response.headers.get('Cache-Control')).toBe('no-cache');
-
-    // Read the stream
-    const reader = (response as any).body.getReader();
-    const decoder = new TextDecoder();
-    let chunks: string[] = [];
-    let result: ReadableStreamReadResult<Uint8Array>;
-
-    do {
-      result = await reader.read();
-      if (!result.done) {
-        chunks.push(decoder.decode(result.value));
-      }
-    } while (!result.done);
-
-    const fullText = chunks.join('');
-    expect(fullText).toContain('event: say');
-    expect(fullText).toContain('event: track');
-    expect(fullText).toContain('event: done');
-    expect(fullText).toContain('Welcome to the show');
+    // SSE path was removed — route always returns JSON now
+    expect(data.success).toBe(true);
+    expect(data.data.tracks).toHaveLength(2);
+    expect(data.data.djMessage).toBe('Welcome to the show');
   });
 });

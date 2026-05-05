@@ -11,10 +11,59 @@ import type { Track, PlaylistPlan } from '../../lib/types';
 import DotMatrix from '../../components/DotMatrix';
 import s from './player.module.css';
 
+/**
+ * Shared helper: fetch a playlist plan from /api/plan and apply to player.
+ * Returns the plan data or throws on failure.
+ */
+async function fetchAndApplyPlaylist(
+  body: Record<string, unknown>,
+  playerMethods: Pick<ReturnType<typeof useAudioPlayer>, 'setPlaylist' | 'playTTS'>,
+  playerRef: React.MutableRefObject<ReturnType<typeof useAudioPlayer> | null>,
+  options: {
+    clearCache?: boolean;
+    onDJMessage: (msg: string) => void;
+    onChatMessage: (msg: { role: 'dj'; content: string }) => void;
+    onAutoplayResult: (blocked: boolean) => void;
+  }
+): Promise<PlaylistPlan | null> {
+  const res = await fetch('/api/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!json.success || !json.data) {
+    throw new Error(json.error || 'API failed');
+  }
+
+  const data: PlaylistPlan = json.data;
+
+  if (options.clearCache) {
+    // Clear played intros tracking via playerRef
+    playerRef.current?.setPlaylist(data.tracks, 0);
+  } else {
+    playerMethods.setPlaylist(data.tracks, 0);
+  }
+
+  options.onDJMessage(data.djMessage);
+  options.onChatMessage({ role: 'dj', content: data.djMessage });
+
+  const ttsSuccess = await playerMethods.playTTS(
+    `/api/tts?text=${encodeURIComponent(data.djMessage)}`
+  );
+  options.onAutoplayResult(!ttsSuccess);
+
+  localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
+  return data;
+}
+
 export default function PlayerPage() {
   const router = useRouter();
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<ReturnType<typeof useAudioPlayer> | null>(null);
   const playedIntrosRef = useRef(new Set<string | number>());
+
+  // ---- Stable player method refs (avoids player in callback deps) ----
+  const playerMethodsRef = useRef<Pick<ReturnType<typeof useAudioPlayer>, 'setPlaylist' | 'playTTS' | 'togglePlay' | 'nextTrack' | 'prevTrack' | 'addToPlaylist' | 'seek' | 'unlockAudio' | 'setVolume'> | null>(null);
 
   const handleTrackNearEnd = useCallback((curr: Track, next?: Track) => {
     if (next && next.djIntro && !playedIntrosRef.current.has(next.id)) {
@@ -48,7 +97,6 @@ export default function PlayerPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const preloadRef = useRef(false);
 
-  // Load DJ style and taste override from localStorage on mount
   const [djStyle, setDjStyle] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('chaos-radio-dj-style') || '深夜电台';
@@ -63,27 +111,56 @@ export default function PlayerPage() {
     return undefined;
   });
 
-  // Touch gestures: double tap = play/pause, swipe left = next, swipe right = prev
+  const player = useAudioPlayer({ onTrackNearEnd: handleTrackNearEnd });
+  playerRef.current = player;
+
   const { onTouchStart, onTouchEnd, gestureFeedback } = useTouchGestures({
     onDoubleTap: () => player.togglePlay(),
     onSwipeLeft: () => player.nextTrack(),
     onSwipeRight: () => player.prevTrack(),
   });
 
+  // Populate stable refs once player is available
+  useEffect(() => {
+    if (player) {
+      playerMethodsRef.current = {
+        setPlaylist: player.setPlaylist,
+        playTTS: player.playTTS,
+        togglePlay: player.togglePlay,
+        nextTrack: player.nextTrack,
+        prevTrack: player.prevTrack,
+        addToPlaylist: player.addToPlaylist,
+        seek: player.seek,
+        unlockAudio: player.unlockAudio,
+        setVolume: player.setVolume,
+      };
+    }
+  }, [player]);
+
+  const { currentTrack, isPlaying, currentTime, duration, playlist: rawPlaylist, currentIndex, isTTSPlaying, lyrics, activeLyricIndex } = player.state || {};
+  const playlist = Array.isArray(rawPlaylist) ? rawPlaylist : [];
+
+  // ---- Playlist near-end preloading ----
   const handlePlaylistNearEnd = useCallback(async (currentTrack: Track) => {
     if (preloadRef.current) return;
     preloadRef.current = true;
 
     console.log('[Player] Playlist near-end: preloading next batch...');
     try {
-      const recent = getRecentNames();
+      const p = playerMethodsRef.current;
+      if (!p) return;
+
+      // Use stable refs for playback methods
+      const playTTSStable = (url: string) => playerRef.current?.playTTS(url);
+      const addToPlaylistStable = (tracks: Track[]) => playerRef.current?.addToPlaylist(tracks);
+
       const res = await fetch('/api/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          recent,
-          liked: getLikedIds(),
-          disliked: getDislikedIds(),
+          recentPlays: getRecentNames(),
+          likedPlays: getLikedIds(),
+          dislikedPlays: getDislikedIds(),
           prompt: '继续推荐下一批歌曲，保持当前的音乐风格和情绪连贯。',
           djStyle,
           tasteOverride,
@@ -97,22 +174,16 @@ export default function PlayerPage() {
       }
 
       const data: PlaylistPlan = json.data;
-      playerRef.current?.addToPlaylist(data.tracks);
+      addToPlaylistStable?.(data.tracks);
       setDjMessage(data.djMessage);
       setChatMessages(prev => [...prev, { role: 'dj', content: data.djMessage }]);
-      playerRef.current?.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
+      playTTSStable?.(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
       localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
     } catch (error) {
       console.error('[Player] Preload error:', error);
       setDjMessage('下一批歌曲信号中断，但我会继续播放...');
     }
   }, [getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
-
-  const player = useAudioPlayer({ onTrackNearEnd: handleTrackNearEnd, onPlaylistNearEnd: handlePlaylistNearEnd });
-  playerRef.current = player;
-
-  const { currentTrack, isPlaying, currentTime, duration, playlist: rawPlaylist, currentIndex, isTTSPlaying, lyrics, activeLyricIndex } = player.state || {};
-  const playlist = Array.isArray(rawPlaylist) ? rawPlaylist : [];
 
   useEffect(() => {
     setMounted(true);
@@ -126,13 +197,11 @@ export default function PlayerPage() {
     if (!vp) return;
 
     const handleResize = () => {
-      // If viewport height shrinks significantly, keyboard is likely visible
       const isKb = window.innerHeight - vp.height > 150;
       setIsKeyboardVisible(isKb);
     };
 
     vp.addEventListener('resize', handleResize);
-    // Check initial state
     handleResize();
     return () => vp.removeEventListener('resize', handleResize);
   }, []);
@@ -141,70 +210,63 @@ export default function PlayerPage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+      const p = playerMethodsRef.current;
+      if (!p) return;
       switch (e.code) {
-        case 'Space': e.preventDefault(); player.togglePlay(); break;
-        case 'ArrowRight': e.preventDefault(); player.nextTrack(); break;
-        case 'ArrowLeft': e.preventDefault(); player.prevTrack(); break;
+        case 'Space': e.preventDefault(); p.togglePlay(); break;
+        case 'ArrowRight': e.preventDefault(); p.nextTrack(); break;
+        case 'ArrowLeft': e.preventDefault(); p.prevTrack(); break;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [player]);
+  }, []);
 
   const initialWelcomeRef = useRef<string | null>(null);
 
-  const handleGeneratePlaylist = useCallback(async () => {
-    player.unlockAudio();
-    const requirement = chatInput.trim();
+  // ---- Generate playlist (used by both manual input and auto-init) ----
+  const doGeneratePlaylist = useCallback(async (requirement: string) => {
     setUiHidden(true);
     setLoading(true);
     setLoadingStage('selecting');
     setDjMessage(requirement ? `正在为你挑选「${requirement}」相关的歌曲...` : 'DJ 正在选歌...');
-    
-    // Stage 1: Selecting songs (simulate progress)
+
     const stage1Timer = setTimeout(() => {
       setLoadingStage('resolving');
       setDjMessage('正在解析曲目，准备串场词...');
     }, 2000);
 
     try {
-      const recent = getRecentNames();
-      const res = await fetch('/api/plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recent,
-          liked: getLikedIds(),
-          disliked: getDislikedIds(),
+      const p = playerMethodsRef.current;
+      if (!p) throw new Error('Player not ready');
+
+      await fetchAndApplyPlaylist(
+        {
+          recentPlays: getRecentNames(),
+          likedPlays: getLikedIds(),
+          dislikedPlays: getDislikedIds(),
           prompt: requirement,
           djStyle,
           tasteOverride,
-        })
-      });
-      const json = await res.json();
-      if (!json.success || !json.data) throw new Error('API failed');
-      const data: PlaylistPlan = json.data;
+        },
+        p,
+        playerRef,
+        {
+          clearCache: true,
+          onDJMessage: (msg) => { setDjMessage(msg); },
+          onChatMessage: (msg) => {
+            setChatMessages(prev => [...prev, msg]);
+            playedIntrosRef.current.clear();
+            preloadRef.current = false;
+          },
+          onAutoplayResult: (blocked) => {
+            setAutoplayBlocked(blocked);
+            if (blocked) setDjMessage('点击播放按钮开始收听 🎧');
+          },
+        }
+      );
 
       clearTimeout(stage1Timer);
-      setLoadingStage('ready');
-      setDjMessage('即将开始播放...');
-
-      playedIntrosRef.current.clear();
-      preloadRef.current = false;
-      player.setPlaylist(data.tracks, 0);
-      setDjMessage(data.djMessage);
-      setChatMessages(prev => [...prev, { role: 'dj', content: data.djMessage }]);
-      
-      // Try to play TTS, handle autoplay block
-      const ttsSuccess = await player.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
-      if (!ttsSuccess) {
-        setAutoplayBlocked(true);
-        setDjMessage('点击播放按钮开始收听 🎧');
-      } else {
-        setAutoplayBlocked(false);
-      }
-      
-      localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
       if (requirement) setChatInput('');
     } catch (e) {
       clearTimeout(stage1Timer);
@@ -213,18 +275,23 @@ export default function PlayerPage() {
       setLoading(false);
       setLoadingStage('idle');
     }
-  }, [chatInput, getRecentNames, getLikedIds, getDislikedIds, player, djStyle, tasteOverride]);
+  }, [getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
 
-  // Load from cache on mount - auto generate playlist
+  const handleGeneratePlaylist = useCallback(async () => {
+    player.unlockAudio();
+    await doGeneratePlaylist(chatInput.trim());
+  }, [chatInput, doGeneratePlaylist, player]);
+
+  // ---- Initialize: load from cache or auto-generate ----
   useEffect(() => {
     if (initialized) return;
     setInitialized(true);
+
     const loadPlan = async () => {
       setLoading(true);
       setLoadingStage('selecting');
       setDjMessage('DJ 正在选歌...');
-      
-      // Stage transition
+
       const stageTimer = setTimeout(() => {
         setLoadingStage('resolving');
         setDjMessage('正在解析曲目，准备串场词...');
@@ -236,15 +303,16 @@ export default function PlayerPage() {
           const data: PlaylistPlan = JSON.parse(cachedStr);
           clearTimeout(stageTimer);
           setLoadingStage('ready');
-          setDjMessage('即将开始播放...');
-          
+
+          const p = playerMethodsRef.current;
+          if (!p) throw new Error('Player not ready');
+
+          player.setPlaylist(data.tracks, 0);
           setChatMessages([{ role: 'dj', content: data.djMessage }]);
+          setDjMessage(data.djMessage);
           playedIntrosRef.current.clear();
           preloadRef.current = false;
-          player.setPlaylist(data.tracks, 0);
-          setDjMessage(data.djMessage);
-          
-          // Try to play, handle autoplay block
+
           const ttsSuccess = await player.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
           if (!ttsSuccess) {
             setAutoplayBlocked(true);
@@ -253,48 +321,35 @@ export default function PlayerPage() {
             setAutoplayBlocked(false);
           }
         } else {
-          // No cache - generate new playlist with stage transitions
-          const recent = getRecentNames();
-          const res = await fetch('/api/plan', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              recent,
-              liked: getLikedIds(),
-              disliked: getDislikedIds(),
-              prompt: '',
-              djStyle,
-              tasteOverride,
-            })
-          });
-          const json = await res.json();
-          
-          clearTimeout(stageTimer);
-          
-          if (json.success && json.data) {
-            setLoadingStage('ready');
-            setDjMessage('即将开始播放...');
-            
-            const data: PlaylistPlan = json.data;
-            playedIntrosRef.current.clear();
-            preloadRef.current = false;
-            player.setPlaylist(data.tracks, 0);
-            setDjMessage(data.djMessage);
-            setChatMessages([{ role: 'dj', content: data.djMessage }]);
-            
-            // Try to play, handle autoplay block
-            const ttsSuccess = await player.playTTS(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
-            if (!ttsSuccess) {
-              setAutoplayBlocked(true);
-              setDjMessage('点击播放按钮开始收听 🎧');
-            } else {
-              setAutoplayBlocked(false);
-            }
-            
-            localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
-          } else {
-            setDjMessage('信号丢失，点击生成按钮重试');
+          const p = playerMethodsRef.current;
+          if (p) {
+            await fetchAndApplyPlaylist(
+              {
+                recentPlays: getRecentNames(),
+                likedPlays: getLikedIds(),
+                dislikedPlays: getDislikedIds(),
+                prompt: '',
+                djStyle,
+                tasteOverride,
+              },
+              p,
+              playerRef,
+              {
+                clearCache: true,
+                onDJMessage: (msg) => { setDjMessage(msg); },
+                onChatMessage: (msg) => {
+                  setChatMessages([msg]);
+                  playedIntrosRef.current.clear();
+                  preloadRef.current = false;
+                },
+                onAutoplayResult: (blocked) => {
+                  setAutoplayBlocked(blocked);
+                  if (blocked) setDjMessage('点击播放按钮开始收听 🎧');
+                },
+              }
+            );
           }
+          clearTimeout(stageTimer);
         }
       } catch (e) {
         clearTimeout(stageTimer);
@@ -305,7 +360,7 @@ export default function PlayerPage() {
       }
     };
     loadPlan();
-  }, [initialized, player, getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
+  }, [initialized, getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
 
   // Dragging logic
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -321,20 +376,18 @@ export default function PlayerPage() {
   useEffect(() => {
     if (!isDragging) return;
 
-    const onMouseMove = (e: MouseEvent) => {
-      handleDrag(e);
-    };
+    const onMouseMove = (e: MouseEvent) => { handleDrag(e); };
 
     const onMouseUp = (e: MouseEvent) => {
       handleDrag(e);
       setIsDragging(false);
 
-      // Calculate final pct to seek
       if (progressBarRef.current && duration) {
         const rect = progressBarRef.current.getBoundingClientRect();
         const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
         const pct = x / rect.width;
-        player.seek(pct * duration);
+        const p = playerMethodsRef.current;
+        p?.seek(pct * duration);
       }
     };
 
@@ -344,7 +397,7 @@ export default function PlayerPage() {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [isDragging, handleDrag, duration, player]);
+  }, [isDragging, handleDrag, duration]);
 
   const displayTime = isDragging ? dragTime : currentTime;
   const progressPct = (duration && duration > 0) ? ((displayTime || 0) / duration) * 100 : 0;
@@ -447,13 +500,11 @@ export default function PlayerPage() {
 
         {/* Player Section */}
         <div className={`${s.playerSection} ${s.z1}`}>
-
           <div className={s.playerTopRow}>
             <div className={s.trackMetaLg}>
               <div className={`${s.trackTitleLg} ${s.mono}`}>
                 {currentTrack ? `${currentTrack.name} - ${currentTrack.artist}` : 'No Signal'}
               </div>
-              {/* Like Button */}
               {currentTrack && (
                 <button 
                   className={`${s.likeBtn} ${isLiked(currentTrack.id) ? s.liked : ''}`} 
@@ -465,7 +516,6 @@ export default function PlayerPage() {
                   </svg>
                 </button>
               )}
-              {/* Lyrics Display */}
               <div className={s.lyricRow}>
                 {activeLyricIndex !== -1 && lyrics && lyrics[activeLyricIndex] ? (
                   <div className={`${s.lyricText} ${s.mono} animate-fade-in`} key={activeLyricIndex}>
@@ -488,15 +538,9 @@ export default function PlayerPage() {
             <div
               className={s.progressBar}
               ref={progressBarRef}
-              onMouseDown={(e) => {
-                setIsDragging(true);
-                handleDrag(e);
-              }}
+              onMouseDown={(e) => { setIsDragging(true); handleDrag(e); }}
             >
-              <div
-                className={`${s.progressFill} ${isDragging ? s.dragging : ''}`}
-                style={{ width: `${progressPct}%` }}
-              ></div>
+              <div className={`${s.progressFill} ${isDragging ? s.dragging : ''}`} style={{ width: `${progressPct}%` }}></div>
             </div>
             <span>{formatTime(duration)}</span>
           </div>
@@ -522,33 +566,13 @@ export default function PlayerPage() {
               <button className={s.ctrlBtnLg} onClick={() => player.nextTrack()}>
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
               </button>
-              {/* Skip + Dislike buttons */}
               {currentTrack && (
                 <div className={s.feedbackBtns}>
-                  <button 
-                    className={`${s.feedbackBtn} ${s.skipBtn}`} 
-                    onClick={() => {
-                      player.nextTrack();
-                      setDjMessage('跳过这首，换个口味...');
-                    }}
-                    title="跳过这首"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M5 12h14M12 5l7 7-7 7" />
-                    </svg>
+                  <button className={`${s.feedbackBtn} ${s.skipBtn}`} onClick={() => { player.nextTrack(); setDjMessage('跳过这首，换个口味...'); }} title="跳过这首">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
                   </button>
-                  <button 
-                    className={`${s.feedbackBtn} ${isDisliked(currentTrack.id) ? s.dislikedBtn : ''}`} 
-                    onClick={() => {
-                      addDislike(currentTrack);
-                      player.nextTrack();
-                      setDjMessage('这首不喜欢，换一首...');
-                    }}
-                    title="不喜欢，换一首"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill={isDisliked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                      <path d="M10 15v4h3v-4h4l-5-5-5 5h4zm9-1V8l-4.5 4.5L14 12l.5.5L15 13l-4 4-4-4 .5-.5L8 12l-.5-.5L7 7v6h4z" />
-                    </svg>
+                  <button className={`${s.feedbackBtn} ${isDisliked(currentTrack.id) ? s.dislikedBtn : ''}`} onClick={() => { addDislike(currentTrack); player.nextTrack(); setDjMessage('这首不喜欢，换一首...'); }} title="不喜欢，换一首">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill={isDisliked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M10 15v4h3v-4h4l-5-5-5 5h4zm9-1V8l-4.5 4.5L14 12l.5.5L15 13l-4 4-4-4 .5-.5L8 12l-.5-.5L7 7v6h4z" /></svg>
                   </button>
                 </div>
               )}
@@ -557,17 +581,10 @@ export default function PlayerPage() {
             <div className={s.sideControls}>
               <div className={s.volWrap}>
                 VOL
-                <input
-                  type="range"
-                  min="0" max="1" step="0.01"
-                  value={player.state?.volume ?? 1}
-                  onChange={(e) => player.setVolume(parseFloat(e.target.value))}
-                  className={s.volSlider}
-                />
+                <input type="range" min="0" max="1" step="0.01" value={player.state?.volume ?? 1} onChange={(e) => player.setVolume(parseFloat(e.target.value))} className={s.volSlider} />
               </div>
             </div>
           </div>
-
         </div>
 
         {/* Queue Section */}
@@ -583,19 +600,13 @@ export default function PlayerPage() {
                 <div key={idx} className={`${s.qItem} ${isActive ? s.active : ''} ${s.mono}`} onClick={() => player.setPlaylist(playlist, idx, true)}>
                   <div className={s.qLeft}>
                     <div className={s.qNumWrap}>
-                      {isActive ? (
-                        isPlaying ? (
-                          <div className={s.miniVis}>
-                            <div className={s.visBar} style={{ height: '8px', animationDelay: '0s' }}></div>
-                            <div className={s.visBar} style={{ height: '12px', animationDelay: '0.2s' }}></div>
-                            <div className={s.visBar} style={{ height: '6px', animationDelay: '0.4s' }}></div>
-                          </div>
-                        ) : (
-                          <div className={s.activePlayIcon}></div>
-                        )
-                      ) : (
-                        <div className={s.qNum}>{idx + 1}</div>
-                      )}
+                      {isActive ? (isPlaying ? (
+                        <div className={s.miniVis}>
+                          <div className={s.visBar} style={{ height: '8px', animationDelay: '0s' }}></div>
+                          <div className={s.visBar} style={{ height: '12px', animationDelay: '0.2s' }}></div>
+                          <div className={s.visBar} style={{ height: '6px', animationDelay: '0.4s' }}></div>
+                        </div>
+                      ) : (<div className={s.activePlayIcon}></div>)) : (<div className={s.qNum}>{idx + 1}</div>)}
                     </div>
                     <div className={s.qTitle}>{track.name}</div>
                   </div>
@@ -606,7 +617,6 @@ export default function PlayerPage() {
           </div>
         </div>
 
-        {/* Gesture Feedback Toast */}
         {gestureFeedback && (
           <div className={s.gestureToast}>{gestureFeedback}</div>
         )}
@@ -614,10 +624,7 @@ export default function PlayerPage() {
         {/* DJ Chat Section */}
         <div className={`${s.chatSection} ${s.z1} ${isKeyboardVisible ? s.keyboardMode : ''}`} ref={transcriptRef}>
           <div className={`${s.chatHeader} ${s.mono}`}>
-            <div className={s.chatBrand}>
-              <div className={s.brandDot}></div>
-              ChaosRadio
-            </div>
+            <div className={s.chatBrand}><div className={s.brandDot}></div>ChaosRadio</div>
             <div className={s.visualizer}>
               <div className={s.visBar} style={{ background: 'rgba(0,255,102,0.5)', height: '8px' }}></div>
               <div className={s.visBar} style={{ background: 'rgba(0,255,102,0.8)', height: '12px' }}></div>
@@ -663,9 +670,7 @@ export default function PlayerPage() {
                       </div>
                     )}
                     <div className={s.bubbleWrap}>
-                      <div className={s.bubble}>
-                        {msg.content}
-                      </div>
+                      <div className={s.bubble}>{msg.content}</div>
                     </div>
                   </div>
                 ))}
@@ -685,27 +690,15 @@ export default function PlayerPage() {
           </div>
 
           <div className={s.inputArea}>
-            <button
-              className={s.actionBtn}
-              onClick={handleGeneratePlaylist}
-              disabled={loading}
-              title="Generate new playlist based on input"
-            >
-              {loading ? (
-                <div className={s.miniLoader}></div>
-              ) : (
+            <button className={s.actionBtn} onClick={handleGeneratePlaylist} disabled={loading} title="Generate new playlist based on input">
+              {loading ? (<div className={s.miniLoader}></div>) : (
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 3l1.912 5.813L21 12l-7.088 3.187L12 21l-1.912-5.813L3 12l7.088-3.187z" />
                 </svg>
               )}
             </button>
-            <input
-              className={`${s.inputBox} ${s.mono}`}
-              placeholder="Suggest a mood, theme, or genre..."
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleChat()}
-            />
+            <input className={`${s.inputBox} ${s.mono}`} placeholder="Suggest a mood, theme, or genre..." value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleChat()} />
             <button className={s.iconBtn} onClick={handleChat} disabled={chatLoading}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
             </button>

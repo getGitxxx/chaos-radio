@@ -7,7 +7,7 @@ import { fetchAndCacheFavorites, loadCachedFavorites } from '../../../lib/ncm';
  */
 
 export async function GET() {
-  const tracks = loadCachedFavorites();
+  const tracks = await loadCachedFavorites();
   const safeTracks = Array.isArray(tracks) ? tracks : [];
 
   return NextResponse.json({
@@ -30,20 +30,28 @@ export async function POST() {
   }
 
   try {
-    const tracks = await fetchAndCacheFavorites(uid);
+    const { tracks, likedCount, playlistCount } = await fetchAndCacheFavorites(uid);
 
     return NextResponse.json({
       success: true,
       data: {
         count: tracks.length,
-        message: `Successfully synced ${tracks.length} unique tracks from NCM`,
+        likedCount,
+        playlistCount,
+        message: `已同步 ${tracks.length} 首歌曲（我喜欢的: ${likedCount} 首，来自 ${playlistCount} 个歌单）`,
       },
     });
   } catch (error) {
-    console.error('[Favorites] Sync error:', error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const isTimeout = errMsg.includes('timed out');
+
+    console.error('[Favorites] Sync error:', errMsg);
     return NextResponse.json(
-      { success: false, error: 'Failed to sync favorites' },
-      { status: 500 }
+      {
+        success: false,
+        error: isTimeout ? '同步超时，请稍后重试（NCM API 响应较慢）' : '同步失败，请确保 NCM 环境变量配置正确',
+      },
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }

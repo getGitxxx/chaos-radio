@@ -14,11 +14,19 @@ async function ncmApi() {
 
 const NCM_TIMEOUT = 8000; // 8s timeout for NCM calls
 
+/**
+ * Call an NCM API function with retry and timeout protection.
+ * Uses Promise.race to enforce a hard deadline even if the NCM API hangs.
+ */
 async function callNcm<T>(fn: () => Promise<T>): Promise<T> {
   return withRetry(async () => {
-    // Note: NCM API doesn't support AbortController natively, so we rely on its internal timeout
-    // and our retry mechanism for resilience.
-    return fn();
+    const result = await Promise.race([
+      fn(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('NCM timeout')), NCM_TIMEOUT)
+      ),
+    ]);
+    return result as T;
   }, { retries: 2, delayMs: 1000 });
 }
 
@@ -69,7 +77,6 @@ export async function getSongUrl(id: number): Promise<string | null> {
 
     const data = result?.body?.data;
     if (!Array.isArray(data) || data.length === 0) return null;
-
     return data[0]?.url || null;
   } catch (error) {
     console.error('[NCM] Song URL error:', error);
@@ -85,9 +92,10 @@ export async function getLyric(id: number): Promise<{ lyric: string; tlyric: str
       cookie: process.env.NCM_COOKIE,
     }));
 
+    const body = (result as unknown as Record<string, unknown>)?.body as Record<string, unknown> | undefined;
     return {
-      lyric: ((result as any)?.body?.lrc?.lyric) ?? '',
-      tlyric: ((result as any)?.body?.tlyric?.lyric) ?? '',
+      lyric: ((body?.lrc as Record<string, string> | undefined)?.lyric) ?? '',
+      tlyric: ((body?.tlyric as Record<string, string> | undefined)?.lyric) ?? '',
     };
   } catch (error) {
     console.error('[NCM] Lyric error:', error);
@@ -103,17 +111,18 @@ export async function getSongDetail(id: number): Promise<Track | null> {
       cookie: process.env.NCM_COOKIE,
     }));
 
-    const songs = result?.body?.songs;
+    const body = (result as unknown as Record<string, unknown>)?.body as Record<string, unknown> | undefined;
+    const songs = body?.songs as unknown[] | undefined;
     if (!Array.isArray(songs) || songs.length === 0) return null;
 
-    const song = songs[0];
+    const song = songs[0] as Record<string, unknown>;
     return {
-      id: song.id,
-      name: song.name,
-      artist: (song.ar ?? []).map((a: { name: string }) => a.name).join(' / ') || 'Unknown Artist',
-      album: song.al?.name || '',
-      cover: song.al?.picUrl || '',
-      duration: song.dt,
+      id: song.id as number,
+      name: song.name as string,
+      artist: ((song.ar ?? []) as Array<{ name: string }>).map((a) => a.name).join(' / ') || 'Unknown Artist',
+      album: (song.al as { name: string })?.name || '',
+      cover: (song.al as { picUrl: string })?.picUrl || '',
+      duration: song.dt as number,
     };
   } catch (error) {
     console.error('[NCM] Song detail error:', error);
@@ -177,28 +186,39 @@ export interface UserPlaylistInfo {
   id: number;
   name: string;
   trackCount: number;
+  creatorUserId?: number;
+  createTime?: number;
 }
 
 /**
  * Fetch all playlists owned by a user.
+ * Returns full playlist info including creator and creation time.
  */
 export async function getUserPlaylists(uid: string | number): Promise<UserPlaylistInfo[]> {
   try {
     const api = await ncmApi();
-    const result = await api.user_playlist({ 
+    const result = await callNcm(() => api.user_playlist({ 
       uid: Number(uid), 
-      limit: 30,
+      limit: 50,
+      offset: 0,
       cookie: process.env.NCM_COOKIE,
-    });
+    }));
 
-    const playlists = result?.body?.playlist;
+    const body = (result as unknown as Record<string, unknown>)?.body as Record<string, unknown> | undefined;
+    const playlists = body?.playlist as unknown[] | undefined;
     if (!Array.isArray(playlists)) return [];
 
-    return playlists.map((p: Record<string, unknown>) => ({
-      id: p.id as number,
-      name: p.name as string,
-      trackCount: p.trackCount as number,
-    }));
+    return playlists.map((p) => {
+      const pl = p as Record<string, unknown>;
+      const creator = pl.creator as Record<string, unknown> | undefined;
+      return {
+        id: pl.id as number,
+        name: pl.name as string,
+        trackCount: pl.trackCount as number,
+        creatorUserId: creator?.userId as number | undefined,
+        createTime: pl.createTime as number | undefined,
+      };
+    });
   } catch (error) {
     console.error('[NCM] getUserPlaylists error:', error);
     return [];
@@ -206,24 +226,78 @@ export async function getUserPlaylists(uid: string | number): Promise<UserPlayli
 }
 
 /**
- * Fetch all tracks from a single playlist.
+ * Fetch the user's liked songs (我喜欢的音乐 / Liked Songs).
+ * This is always playlist ID 0 with special handling — uses /likelist endpoint.
  */
-export async function getPlaylistTracks(playlistId: number, limit = 200): Promise<FavoriteEntry[]> {
+export async function getUserLikedSongs(uid: string | number): Promise<FavoriteEntry[]> {
   try {
     const api = await ncmApi();
-    const result = await api.playlist_track_all({ 
-      id: playlistId, 
-      limit,
+    const result = await callNcm(() => api.likelist({
+      uid: Number(uid),
       cookie: process.env.NCM_COOKIE,
-    });
+    }));
 
-    const songs = result?.body?.songs;
+    const body = (result as unknown as Record<string, unknown>)?.body as Record<string, unknown> | undefined;
+    const ids = body?.ids as number[] | undefined;
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+
+    // Fetch song details in batches of 100
+    const allSongs: FavoriteEntry[] = [];
+    const batchSize = 100;
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batch = ids.slice(i, i + batchSize);
+      const detailResult = await callNcm(() => api.song_detail({
+        ids: batch.join(','),
+        cookie: process.env.NCM_COOKIE,
+      }));
+
+      const body = (detailResult as unknown as Record<string, unknown>)?.body as Record<string, unknown> | undefined;
+      const songs = body?.songs as unknown[] | undefined;
+      if (!Array.isArray(songs)) continue;
+
+      for (const song of songs) {
+        const s = song as Record<string, unknown>;
+        allSongs.push({
+          name: s.name as string,
+          artist: ((s.ar as Array<{ name: string }>) || []).map((a) => a.name).join(' / '),
+        });
+      }
+    }
+
+    console.log(`[NCM] Liked songs: ${allSongs.length} tracks`);
+    return allSongs;
+  } catch (error) {
+    console.error('[NCM] getUserLikedSongs error:', error);
+    return [];
+  }
+}
+
+/**
+ * Fetch max N tracks from a specific playlist.
+ */
+export async function getPlaylistTracks(
+  playlistId: number,
+  maxTracks = 200
+): Promise<FavoriteEntry[]> {
+  try {
+    const api = await ncmApi();
+    const result = await callNcm(() => api.playlist_track_all({ 
+      id: playlistId, 
+      limit: maxTracks,
+      cookie: process.env.NCM_COOKIE,
+    }));
+
+    const body = (result as unknown as Record<string, unknown>)?.body as Record<string, unknown> | undefined;
+    const songs = body?.songs as unknown[] | undefined;
     if (!Array.isArray(songs)) return [];
 
-    return songs.map((song: Record<string, unknown>) => ({
-      name: song.name as string,
-      artist: ((song.ar as Array<{ name: string }>) || []).map((a) => a.name).join(' / '),
-    }));
+    return songs.map((song) => {
+      const s = song as Record<string, unknown>;
+      return {
+        name: s.name as string,
+        artist: ((s.ar as Array<{ name: string }>) || []).map((a) => a.name).join(' / '),
+      };
+    });
   } catch (error) {
     console.error(`[NCM] getPlaylistTracks(${playlistId}) error:`, error);
     return [];
@@ -231,30 +305,68 @@ export async function getPlaylistTracks(playlistId: number, limit = 200): Promis
 }
 
 /**
- * Fetch all user favorites and cache to a local JSON file.
- * Returns the list of unique tracks.
+ * Fetch all user favorites and cache to /tmp for serverless use.
+ *
+ * Priority:
+ * 1. "我喜欢的音乐" (liked songs) — fetched first
+ * 2. User-created playlists (creator.userId === uid), top 10 most recently created
+ *
+ * Protected by a 30s overall timeout.
  */
-export async function fetchAndCacheFavorites(uid: string | number): Promise<FavoriteEntry[]> {
-  const { writeFileSync } = await import('fs');
-  const { join } = await import('path');
-
+export async function fetchAndCacheFavorites(uid: string | number): Promise<{
+  tracks: FavoriteEntry[];
+  likedCount: number;
+  playlistCount: number;
+}> {
   console.log('[NCM] Fetching favorites for user (UID redacted)');
 
-  // 1. Get all user playlists
-  const playlists = await getUserPlaylists(uid);
-  if (playlists.length === 0) {
-    console.warn('[NCM] No playlists found for user');
-    return [];
+  // Overall timeout: 30s
+  const OVERALL_TIMEOUT = 30000;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Favorites sync timed out after 30s')), OVERALL_TIMEOUT)
+  );
+
+  try {
+    const result = await Promise.race([
+      doFetchAndCache(uid),
+      timeoutPromise,
+    ]);
+    return result;
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[NCM] fetchAndCacheFavorites failed:', errMsg);
+    throw error;
   }
+}
 
-  console.log(`[NCM] Found ${playlists.length} playlists, fetching tracks...`);
-
-  // 2. Fetch tracks from each playlist (parallel, max 5 at a time)
+async function doFetchAndCache(uid: string | number): Promise<{
+  tracks: FavoriteEntry[];
+  likedCount: number;
+  playlistCount: number;
+}> {
   const allTracks: FavoriteEntry[] = [];
-  const batchSize = 5;
 
-  for (let i = 0; i < playlists.length; i += batchSize) {
-    const batch = playlists.slice(i, i + batchSize);
+  // 1. Fetch "我喜欢的音乐" first
+  const likedSongs = await getUserLikedSongs(uid);
+  allTracks.push(...likedSongs);
+  const likedCount = likedSongs.length;
+  console.log(`[NCM] Liked songs synced: ${likedCount}`);
+
+  // 2. Fetch only user-created playlists, sorted by recency, top 10
+  const playlists = await getUserPlaylists(uid);
+
+  // Filter: only user's own playlists
+  const ownPlaylists = playlists
+    .filter((p) => p.creatorUserId === Number(uid))
+    .sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
+    .slice(0, 10);
+
+  console.log(`[NCM] User-created playlists: ${ownPlaylists.length}/${playlists.length} (top 10)`);
+
+  // 3. Fetch tracks from each playlist (in batches of 3 parallel)
+  const batchSize = 3;
+  for (let i = 0; i < ownPlaylists.length; i += batchSize) {
+    const batch = ownPlaylists.slice(i, i + batchSize);
     const results = await Promise.allSettled(
       batch.map((p) => getPlaylistTracks(p.id, 200))
     );
@@ -266,7 +378,7 @@ export async function fetchAndCacheFavorites(uid: string | number): Promise<Favo
     }
   }
 
-  // 3. Deduplicate by name + artist
+  // 4. Deduplicate by name + artist
   const seen = new Set<string>();
   const unique = allTracks.filter((t) => {
     const key = `${t.name}::${t.artist}`;
@@ -275,17 +387,21 @@ export async function fetchAndCacheFavorites(uid: string | number): Promise<Favo
     return true;
   });
 
-  console.log(`[NCM] Total unique tracks: ${unique.length}`);
+  console.log(`[NCM] Total unique tracks: ${unique.length} (liked: ${likedCount}, from ${ownPlaylists.length} playlists)`);
 
-  // 4. Cache to /tmp for serverless compatibility
+  // 5. Cache to /tmp for serverless compatibility
   const cachePath = '/tmp/chaos-radio-favorites-cache.json';
   const cacheData = {
     uid,
     fetchedAt: new Date().toISOString(),
     count: unique.length,
+    likedCount,
+    playlistCount: ownPlaylists.length,
     tracks: unique,
   };
 
+  // Dynamic imports for filesystem (serverless-safe: only used in Node.js runtime)
+  const { writeFileSync } = await import('fs');
   try {
     writeFileSync(cachePath, JSON.stringify(cacheData, null, 2), 'utf-8');
     console.log(`[NCM] Favorites cached to ${cachePath}`);
@@ -293,16 +409,19 @@ export async function fetchAndCacheFavorites(uid: string | number): Promise<Favo
     console.error('[NCM] Failed to write cache:', e);
   }
 
-  return unique;
+  return {
+    tracks: unique,
+    likedCount,
+    playlistCount: ownPlaylists.length,
+  };
 }
 
 /**
- * Load cached favorites from disk. Returns empty array if no cache exists.
+ * Load cached favorites from /tmp. Returns empty array if no cache exists.
  */
 export async function loadCachedFavorites(): Promise<FavoriteEntry[]> {
   try {
     const { readFile } = await import('fs/promises');
-    const pathModule = await import('path');
     const cachePath = '/tmp/chaos-radio-favorites-cache.json';
     const raw = await readFile(cachePath, 'utf-8');
     const data = JSON.parse(raw);

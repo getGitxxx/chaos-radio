@@ -7,6 +7,15 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
 });
 
+/** Extended create params — DeepSeek supports response_format but OpenAI types don't expose it */
+interface DeepSeekCreateParams {
+  model: string;
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+  temperature: number;
+  max_tokens: number;
+  response_format: { type: 'json_object' };
+}
+
 const DJ_OUTPUT_SCHEMA = `You MUST respond with valid JSON in this exact format:
 {
   "say": "your general welcome/intro commentary in Chinese for the whole playlist, natural and warm",
@@ -50,18 +59,20 @@ export async function callLLM(
         setTimeout(() => reject(new Error('LLM timeout')), timeoutMs)
       );
 
-      const completion = await Promise.race([
-        client.chat.completions.create({
-          model,
-          messages,
-          temperature: 0.85,
-          max_tokens: 800,
-          response_format: { type: 'json_object' },
-        } as any),
-        timeoutPromise
-      ]) as any;
+      const createParams: DeepSeekCreateParams = {
+        model,
+        messages,
+        temperature: 0.85,
+        max_tokens: 800,
+        response_format: { type: 'json_object' },
+      };
 
-      const content = completion?.choices?.[0]?.message?.content;
+      const completion = await Promise.race([
+        client.chat.completions.create(createParams as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming),
+        timeoutPromise
+      ]);
+
+      const content = (completion as OpenAI.Chat.Completions.ChatCompletion)?.choices?.[0]?.message?.content;
       if (!content) throw new Error('LLM returned empty content');
       return content;
     }, { retries: 2, delayMs: 2000 });
@@ -70,6 +81,19 @@ export async function callLLM(
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error('[LLM] All retries exhausted:', errMsg);
+
+    // Distinguish timeout from other errors for user-friendly messaging
+    const isTimeout = error instanceof Error && error.message === 'LLM timeout';
+    if (isTimeout) {
+      console.error('[LLM] Timeout after', timeoutMs, 'ms');
+      return {
+        say: '信号有点慢，让我再想想...',
+        play: [],
+        reason: 'LLM request timed out',
+        segue: 'warm',
+      };
+    }
+
     return {
       say: '信号有点不稳定，让我再想想...',
       play: [],
@@ -84,10 +108,13 @@ function parseResponse(raw: string): DJResponse {
     const data = JSON.parse(raw);
     return {
       say: String(data.say || ''),
-      play: Array.isArray(data.play) ? data.play.map((p: any) => ({
-        query: String(p.query || p),
-        intro: String(p.intro || '')
-      })) : [],
+      play: Array.isArray(data.play) ? data.play.map((p: unknown) => {
+        const item = p as Record<string, unknown>;
+        return {
+          query: String(item.query || p),
+          intro: String(item.intro || '')
+        };
+      }) : [],
       reason: String(data.reason || ''),
       segue: String(data.segue || 'warm'),
     };

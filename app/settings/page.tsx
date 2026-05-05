@@ -76,18 +76,26 @@ export default function SettingsPage() {
   const handleSyncFavorites = async () => {
     if (isSyncing) return;
     setIsSyncing(true);
+    setSaveMessage('正在连接网易云音乐...');
     try {
       const res = await fetch('/api/favorites', { method: 'POST' });
       const data = await res.json();
       if (data.success && data.data) {
         setFavCount(data.data.count);
-        setSaveMessage(data.data.message || '同步成功！');
+        const msgParts = [data.data.message || '同步成功'];
+        if (data.data.likedCount !== undefined) {
+          msgParts.push(`我喜欢的: ${data.data.likedCount} 首`);
+        }
+        if (data.data.playlistCount !== undefined) {
+          msgParts.push(`歌单: ${data.data.playlistCount} 个`);
+        }
+        setSaveMessage(msgParts.join('，'));
       } else {
-        setSaveMessage('同步失败: ' + (data.error || '未知错误'));
+        setSaveMessage(data.error || '同步失败，请稍后重试');
       }
     } catch (err) {
-      setSaveMessage('同步请求失败');
-      console.error(err);
+      setSaveMessage('网络连接失败，请检查网络后重试');
+      console.error('[Settings] Sync error:', err);
     } finally {
       setIsSyncing(false);
     }

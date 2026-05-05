@@ -27,7 +27,7 @@ export async function withRetry<T>(
 ): Promise<T> {
   const { retries = 2, delayMs = 1000, onRetry } = options;
 
-  let lastError: Error | null = null;
+  let lastError: Error = new Error('withRetry: unreachable (no attempts made)');
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -44,7 +44,7 @@ export async function withRetry<T>(
     }
   }
 
-  throw lastError!;
+  throw lastError;
 }
 
 /**
