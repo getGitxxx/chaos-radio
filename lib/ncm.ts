@@ -103,35 +103,8 @@ export async function getLyric(id: number): Promise<{ lyric: string; tlyric: str
   }
 }
 
-export async function getSongDetail(id: number): Promise<Track | null> {
-  try {
-    const api = await ncmApi();
-    const result = await callNcm(() => api.song_detail({ 
-      ids: String(id),
-      cookie: process.env.NCM_COOKIE,
-    }));
-
-    const body = (result as unknown as Record<string, unknown>)?.body as Record<string, unknown> | undefined;
-    const songs = body?.songs as unknown[] | undefined;
-    if (!Array.isArray(songs) || songs.length === 0) return null;
-
-    const song = songs[0] as Record<string, unknown>;
-    return {
-      id: song.id as number,
-      name: song.name as string,
-      artist: ((song.ar ?? []) as Array<{ name: string }>).map((a) => a.name).join(' / ') || 'Unknown Artist',
-      album: (song.al as { name: string })?.name || '',
-      cover: (song.al as { picUrl: string })?.picUrl || '',
-      duration: song.dt as number,
-    };
-  } catch (error) {
-    console.error('[NCM] Song detail error:', error);
-    return null;
-  }
-}
-
 /**
- * Search for a song and return a fully resolved Track with URL, cover, and lyrics.
+ * Search for a song and return a fully resolved Track with URL and lyrics.
  */
 export async function resolveTrack(query: string): Promise<Track | null> {
   const t0 = Date.now();
@@ -142,10 +115,9 @@ export async function resolveTrack(query: string): Promise<Track | null> {
   }
 
   const match = results[0];
-  const [url, lyrics, detail] = await Promise.all([
+  const [url, lyrics] = await Promise.all([
     getSongUrl(match.id),
     getLyric(match.id),
-    getSongDetail(match.id),
   ]);
 
   if (!url) {

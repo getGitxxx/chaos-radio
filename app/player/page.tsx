@@ -397,7 +397,7 @@ export default function PlayerPage() {
           const p = playerMethodsRef.current;
           if (p) {
             const controller = new AbortController();
-            const initTimeout = setTimeout(() => controller.abort(), 10000);
+            const initTimeout = setTimeout(() => controller.abort(), 8000);
 
             try {
               const tFetch = Date.now();
