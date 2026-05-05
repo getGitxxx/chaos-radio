@@ -81,7 +81,7 @@ export default function PlayerPage() {
 
   const { addPlay, getRecentNames } = usePlayHistory();
   const { toggleLike, isLiked, getLikedIds, getLikedArray } = useLikedTracks();
-  const { addDislike, isDisliked, getDislikedIds } = useDislikedTracks();
+  const { addDislike, getDislikedIds } = useDislikedTracks();
   const { recordSkip, recordPlay, getSkipSignals, getReplaySignals } = useBehaviorSignals();
   const transcriptRef = useRef<HTMLDivElement>(null);
   const chatSectionRef = useRef<HTMLDivElement>(null);
@@ -120,17 +120,36 @@ export default function PlayerPage() {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const [djStyle, setDjStyle] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('chaos-radio-dj-style') || '深夜电台';
+  // Queue Swipe State
+  const [swipedTrackId, setSwipedTrackId] = useState<number | null>(null);
+  const touchStartX = useRef<number>(0);
+
+  const handleQueueItemTouchStart = (e: React.TouchEvent, trackId: number) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleQueueItemTouchEnd = (e: React.TouchEvent, track: Track) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchEndX - touchStartX.current;
+
+    // Right swipe threshold (50px)
+    if (diff > 50) {
+      addDislike(track);
+      player.nextTrack(); // Trigger skip to move on
+      setDjMessage('这首歌不太对味，跳过...');
+      
+      // Visual feedback (remove from DOM)
+      setSwipedTrackId(track.id);
+      setTimeout(() => setSwipedTrackId(null), 500);
     }
+  };
+
+  const [djStyle, setDjStyle] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('chaos-radio-dj-style') || '深夜电台';
     return '深夜电台';
   });
   const [tasteOverride, setTasteOverride] = useState<string | undefined>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('chaos-radio-taste-override');
-      return saved || undefined;
-    }
+    if (typeof window !== 'undefined') return localStorage.getItem('chaos-radio-taste-override') || undefined;
     return undefined;
   });
 
@@ -566,9 +585,23 @@ export default function PlayerPage() {
         <div className={`${s.playerSection} ${s.z1}`}>
             <div className={s.playerTopRow}>
             <div className={s.trackMetaLg}>
-              <div className={`${s.trackTitleLg} ${s.mono}`}>
-                {currentTrack ? `${currentTrack.name} - ${currentTrack.artist}` : 'No Signal'}
+              <div className={s.trackHeaderWrap}>
+                <div className={`${s.trackTitleLg} ${s.mono}`}>
+                  {currentTrack ? `${currentTrack.name} - ${currentTrack.artist}` : 'No Signal'}
+                </div>
+                {currentTrack && (
+                  <button 
+                    className={`${s.likeBtnSm} ${isLiked(currentTrack.id) ? s.liked : ''}`} 
+                    onClick={() => toggleLike(currentTrack)}
+                    title={isLiked(currentTrack.id) ? '取消收藏' : '收藏这首'}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill={isLiked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                    </svg>
+                  </button>
+                )}
               </div>
+              
               <div className={s.lyricRow}>
                 {activeLyricIndex !== -1 && lyrics && lyrics[activeLyricIndex] ? (
                   <div className={`${s.lyricText} ${s.mono} animate-fade-in`} key={activeLyricIndex}>
@@ -622,26 +655,6 @@ export default function PlayerPage() {
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
                 </button>
               </div>
-
-              {/* Tier 2: Feedback & Actions */}
-              {currentTrack && (
-                <div className={s.feedbackRow}>
-                  <button className={`${s.actionIcon} ${isDisliked(currentTrack.id) ? s.activeDislike : ''}`}
-                    onClick={() => { addDislike(currentTrack); player.nextTrack(); setDjMessage('这首不喜欢，换一首...'); }} title="不喜欢">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill={isDisliked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M10 15v4h3v-4h4l-5-5-5 5h4zm9-1V8l-4.5 4.5L14 12l.5.5L15 13l-4 4-4-4 .5-.5L8 12l-.5-.5L7 7v6h4z" /></svg>
-                  </button>
-                  
-                  <button className={`${s.actionIcon} ${isLiked(currentTrack.id) ? s.activeLike : ''}`}
-                    onClick={() => toggleLike(currentTrack)} title={isLiked(currentTrack.id) ? '取消收藏' : '收藏这首'}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill={isLiked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
-                  </button>
-                  
-                  <button className={`${s.actionIcon} ${s.skipBtn}`}
-                    onClick={() => { player.nextTrack(); setDjMessage('跳过这首，换个口味...'); }} title="跳过">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
-                  </button>
-                </div>
-              )}
             </div>
 
             <div className={s.sideControls}>
@@ -659,28 +672,31 @@ export default function PlayerPage() {
             <span>QUEUE</span>
             <span>{playlist.length} TRACKS</span>
           </div>
-          <div className={s.queueList}>
-            {playlist.map((track: Track, idx: number) => {
-              const isActive = currentIndex === idx;
-              return (
-                <div key={idx} className={`${s.qItem} ${isActive ? s.active : ''} ${s.mono}`} onClick={() => player.setPlaylist(playlist, idx, true)}>
-                  <div className={s.qLeft}>
-                    <div className={s.qNumWrap}>
-                      {isActive ? (isPlaying ? (
-                        <div className={s.miniVis}>
-                          <div className={s.visBar} style={{ height: '8px', animationDelay: '0s' }}></div>
-                          <div className={s.visBar} style={{ height: '12px', animationDelay: '0.2s' }}></div>
-                          <div className={s.visBar} style={{ height: '6px', animationDelay: '0.4s' }}></div>
-                        </div>
-                      ) : (<div className={s.activePlayIcon}></div>)) : (<div className={s.qNum}>{idx + 1}</div>)}
+            <div className={s.queueList}>
+              {playlist.filter(t => t.id !== swipedTrackId).map((track: Track, idx: number) => {
+                const isActive = currentIndex === idx;
+                return (
+                  <div key={track.id} className={`${s.qItem} ${isActive ? s.active : ''} ${s.mono}`} 
+                       onClick={() => player.setPlaylist(playlist, idx, true)}
+                       onTouchStart={(e) => handleQueueItemTouchStart(e, track.id)}
+                       onTouchEnd={(e) => handleQueueItemTouchEnd(e, track)}>
+                    <div className={s.qLeft}>
+                      <div className={s.qNumWrap}>
+                        {isActive ? (isPlaying ? (
+                          <div className={s.miniVis}>
+                            <div className={s.visBar} style={{ height: '8px', animationDelay: '0s' }}></div>
+                            <div className={s.visBar} style={{ height: '12px', animationDelay: '0.2s' }}></div>
+                            <div className={s.visBar} style={{ height: '6px', animationDelay: '0.4s' }}></div>
+                          </div>
+                        ) : (<div className={s.activePlayIcon}></div>)) : (<div className={s.qNum}>{idx + 1}</div>)}
+                      </div>
+                      <div className={s.qTitle}>{track.name}</div>
                     </div>
-                    <div className={s.qTitle}>{track.name}</div>
+                    <div className={s.qArtist}>{track.artist}</div>
                   </div>
-                  <div className={s.qArtist}>{track.artist}</div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
         </div>
 
         {gestureFeedback && (
