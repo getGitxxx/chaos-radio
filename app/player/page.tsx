@@ -9,6 +9,7 @@ import { useDislikedTracks } from '../../hooks/useDislikedTracks';
 import { useTouchGestures } from '../../hooks/useTouchGestures';
 import { useBehaviorSignals } from '../../hooks/useBehaviorSignals';
 import type { Track, PlaylistPlan } from '../../lib/types';
+import { FALLBACK_TRACKS } from '../../lib/types';
 import DotMatrix from '../../components/DotMatrix';
 import s from './player.module.css';
 
@@ -21,6 +22,7 @@ async function fetchAndApplyPlaylist(
   playerMethods: Pick<ReturnType<typeof useAudioPlayer>, 'setPlaylist' | 'playTTS'>,
   playerRef: React.MutableRefObject<ReturnType<typeof useAudioPlayer> | null>,
   options: {
+    signal?: AbortSignal;
     clearCache?: boolean;
     onDJMessage: (msg: string) => void;
     onChatMessage: (msg: { role: 'dj'; content: string }) => void;
@@ -31,6 +33,7 @@ async function fetchAndApplyPlaylist(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
   const json = await res.json();
   if (!json.success || !json.data) {
@@ -367,35 +370,50 @@ export default function PlayerPage() {
         } else {
           const p = playerMethodsRef.current;
           if (p) {
-            await fetchAndApplyPlaylist(
-              {
-                recentPlays: getRecentNames(),
-                likedPlays: getLikedIds(),
-                dislikedPlays: getDislikedIds(),
-                skipSignals: getSkipSignals(),
-                replaySignals: getReplaySignals(),
-                prompt: '',
-                djStyle,
-                tasteOverride,
-              },
-              p,
-              playerRef,
-              {
-                clearCache: true,
-                onDJMessage: (msg) => { setDjMessage(msg); },
-                onChatMessage: (msg) => {
-                  setChatMessages([msg]);
-                  playedIntrosRef.current.clear();
-                  preloadRef.current = false;
+            const controller = new AbortController();
+            const initTimeout = setTimeout(() => controller.abort(), 10000);
+
+            try {
+              await fetchAndApplyPlaylist(
+                {
+                  recentPlays: getRecentNames(),
+                  likedPlays: getLikedIds(),
+                  dislikedPlays: getDislikedIds(),
+                  skipSignals: getSkipSignals(),
+                  replaySignals: getReplaySignals(),
+                  prompt: '',
+                  djStyle,
+                  tasteOverride,
                 },
-                onAutoplayResult: (blocked) => {
-                  setAutoplayBlocked(blocked);
-                  if (blocked) setDjMessage('点击播放按钮开始收听 🎧');
-                },
-              }
-            );
+                p,
+                playerRef,
+                {
+                  signal: controller.signal,
+                  clearCache: true,
+                  onDJMessage: (msg) => { setDjMessage(msg); },
+                  onChatMessage: (msg) => {
+                    setChatMessages([msg]);
+                    playedIntrosRef.current.clear();
+                    preloadRef.current = false;
+                  },
+                  onAutoplayResult: (blocked) => {
+                    setAutoplayBlocked(blocked);
+                    if (blocked) setDjMessage('点击播放按钮开始收听 🎧');
+                  },
+                }
+              );
+              clearTimeout(initTimeout);
+            } catch (e) {
+              clearTimeout(initTimeout);
+              // Fallback: Play builtin tracks
+              setDjMessage('信号不稳定，为您播放经典推荐歌单。');
+              setChatMessages([{ 
+                  role: 'dj', 
+                  content: '连接超时，这是系统精选歌单，稍后将自动刷新新歌单。' 
+              }]);
+              p.setPlaylist(FALLBACK_TRACKS, 0);
+            }
           }
-          clearTimeout(stageTimer);
         }
       } catch (e) {
         clearTimeout(stageTimer);
