@@ -6,6 +6,18 @@ import type { Track } from '../../../lib/types';
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
+// Suppress DEP0169 (url.parse) warning from NeteaseCloudMusicApi dependency
+if (typeof process !== 'undefined') {
+  const originalEmit = process.emit;
+  // @ts-ignore
+  process.emit = function (name, data, ...args) {
+    if (name === 'warning' && typeof data === 'object' && (data as any).code === 'DEP0169') {
+      return false;
+    }
+    return originalEmit.apply(process, [name, data, ...args] as any);
+  };
+}
+
 /**
  * POST /api/plan — Generate a playlist via SSE (Server-Sent Events).
  *
