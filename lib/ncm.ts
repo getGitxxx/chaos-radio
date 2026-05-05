@@ -12,7 +12,7 @@ async function ncmApi() {
   return api;
 }
 
-const NCM_TIMEOUT = 8000; // 8s timeout for NCM calls
+const NCM_TIMEOUT = 5000;
 
 /**
  * Call an NCM API function with retry and timeout protection.
@@ -27,7 +27,7 @@ async function callNcm<T>(fn: () => Promise<T>): Promise<T> {
       ),
     ]);
     return result as T;
-  }, { retries: 2, delayMs: 1000 });
+  }, { retries: 1, delayMs: 1000 });
 }
 
 export async function searchSongs(
@@ -115,10 +115,13 @@ export async function resolveTrack(query: string): Promise<Track | null> {
   }
 
   const match = results[0];
-  const [url, lyrics] = await Promise.all([
+  const [urlResult, lyricsResult] = await Promise.allSettled([
     getSongUrl(match.id),
     getLyric(match.id),
   ]);
+
+  const url = urlResult.status === 'fulfilled' ? urlResult.value : null;
+  const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : { lyric: '', tlyric: '' };
 
   if (!url) {
     console.log(`[NCM] resolveTrack "${query}" → no URL (${Date.now() - t0}ms)`);

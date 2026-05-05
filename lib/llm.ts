@@ -75,7 +75,7 @@ export async function callLLM(
       const content = (completion as OpenAI.Chat.Completions.ChatCompletion)?.choices?.[0]?.message?.content;
       if (!content) throw new Error('LLM returned empty content');
       return content;
-    }, { retries: 2, delayMs: 2000 });
+    }, { retries: 1, delayMs: 2000 });
 
     return parseResponse(raw);
   } catch (error) {
