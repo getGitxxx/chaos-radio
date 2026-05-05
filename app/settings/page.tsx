@@ -90,11 +90,14 @@ export default function SettingsPage() {
           msgParts.push(`歌单: ${data.data.playlistCount} 个`);
         }
         setSaveMessage(msgParts.join('，'));
+        setTimeout(() => setSaveMessage(''), 5000);
       } else {
         setSaveMessage(data.error || '同步失败，请稍后重试');
+        setTimeout(() => setSaveMessage(''), 8000);
       }
     } catch (err) {
       setSaveMessage('网络连接失败，请检查网络后重试');
+      setTimeout(() => setSaveMessage(''), 8000);
       console.error('[Settings] Sync error:', err);
     } finally {
       setIsSyncing(false);
