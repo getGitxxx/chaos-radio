@@ -18,12 +18,13 @@ const NCM_TIMEOUT = 3000;
  * Call an NCM API function with retry and timeout protection.
  * Uses Promise.race to enforce a hard deadline even if the NCM API hangs.
  */
-async function callNcm<T>(fn: () => Promise<T>): Promise<T> {
+async function callNcm<T>(fn: () => Promise<T>, timeoutMs?: number): Promise<T> {
+  const timeout = timeoutMs || NCM_TIMEOUT;
   return withRetry(async () => {
     const result = await Promise.race([
       fn(),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('NCM timeout')), NCM_TIMEOUT)
+        setTimeout(() => reject(new Error('NCM timeout')), timeout)
       ),
     ]);
     return result as T;
@@ -255,7 +256,7 @@ export async function getUserLikedSongs(uid: string | number): Promise<FavoriteE
       const detailResult = await callNcm(() => api.song_detail({
         ids: batch.join(','),
         cookie: process.env.NCM_COOKIE,
-      }));
+      }), 6000);
 
       const body = (detailResult as unknown as Record<string, unknown>)?.body as Record<string, unknown> | undefined;
       const songs = body?.songs as unknown[] | undefined;
@@ -291,7 +292,7 @@ export async function getPlaylistTracks(
       id: playlistId, 
       limit: maxTracks,
       cookie: process.env.NCM_COOKIE,
-    }));
+    }), 10000); // 10s for bulk track fetch
 
     const body = (result as unknown as Record<string, unknown>)?.body as Record<string, unknown> | undefined;
     const songs = body?.songs as unknown[] | undefined;
