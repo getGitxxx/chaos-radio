@@ -81,7 +81,7 @@ export async function POST(request: Request) {
         });
 
         // 3. LLM call
-        const djResponse = await callLLM(systemPrompt, userMessage, [], 10000);
+        const djResponse = await callLLM(systemPrompt, userMessage, [], 15000);
 
         // 4. Push DJ message immediately — frontend plays TTS right away
         send('dj_message', {
