@@ -24,6 +24,7 @@ export async function buildContext(options: {
   djStyle?: string;
   skipSignals?: string[];
   replaySignals?: string[];
+  queueTracks?: string[]; // Songs currently in the player queue
 }): Promise<string> {
   const t0 = Date.now();
   const fragments: string[] = [];
@@ -107,10 +108,15 @@ export async function buildContext(options: {
 
   fragments.push(envContext);
 
-  // ⑤ Play history
-  if (options.recentPlays && options.recentPlays.length > 0) {
-    const recent = options.recentPlays.slice(-10).join('\n- ');
-    fragments.push(`## 最近播放\n- ${recent}\n\n注意避免重复推荐这些歌曲，除非用户明确要求。`);
+  // ⑤ Play history & Anti-repetition
+  const forbiddenList = new Set([
+    ...(options.recentPlays || []).slice(-20),
+    ...(options.queueTracks || [])
+  ]);
+
+  if (forbiddenList.size > 0) {
+    const forbidden = Array.from(forbiddenList).join('\n- ');
+    fragments.push(`## 禁止重复推荐 (Negative Constraints)\n以下歌曲是用户最近听过的或已经在播放队列中的。**绝对禁止**再次推荐这些具体的歌曲：\n- ${forbidden}`);
   }
 
   // ⑥ User favorites (from NCM playlists)
@@ -139,7 +145,7 @@ export async function buildContext(options: {
 
   if (options.replaySignals && options.replaySignals.length > 0) {
     const replays = options.replaySignals.join('\n- ');
-    fragments.push(`## 重播信号\n以下歌曲用户在 24 小时内反复播放了多次（隐式超级喜欢），请优先推荐这些歌曲或风格相近的作品：\n- ${replays}`);
+    fragments.push(`## 重播信号\n以下歌曲用户最近反复播放了多次。在自动推荐模式下，请参考它们的风格推荐新歌，而不是直接重播原曲。除非用户明确要求，否则不要让这些歌曲占据太多位置。\n- ${replays}`);
   }
 
   if (options.mood) {
@@ -148,8 +154,23 @@ export async function buildContext(options: {
 
   if (likedPlays.length > 0) {
     const likes = likedPlays.join('\n- ');
-    fragments.push(`## 专属置顶红心单曲\n这是用户在此电台中主动点击 Like 标心的超级红心歌曲。生成歌单时，请**务必赋予最高优先级**，尝试从以下歌曲中挑选 1-2 首加入当前播放列表！\n- ${likes}`);
+    fragments.push(`## 专属红心参考\n这是用户主动点赞的超级红心歌曲。它们定义了用户的审美核心。
+- **选歌逻辑**：优先推荐与这些歌曲风格、情绪相近的“新发现”。
+- **频率限制**：除非用户点名要求，否则在生成的 5 首歌中，直接来自此列表的原曲**不得超过 1 首**。
+- **推荐列表**：\n- ${likes}`);
   }
+
+  // ⑦ Intent Awareness & Diversity Rules
+  const hasSpecificIntent = options.userMessage && (
+    options.userMessage.includes('听') || 
+    options.userMessage.includes('放') || 
+    options.userMessage.includes('推荐')
+  ) && options.userMessage.length > 4;
+
+  fragments.push(`## 动态推荐策略
+1. **探索优先**：在自动播放模式下，请执行 "3+2" 策略：至少 3 首风格相近的新歌（探索），最多 2 首用户熟悉的红心/收藏歌曲（复习）。
+2. **艺人多样性**：${hasSpecificIntent ? '由于用户提供了具体的听歌指令，你可以根据指令推荐同一艺人的多首歌曲。' : '在自动推荐模式下，单次生成的 5 首歌中应避免出现同一艺人的多首作品，除非他们是多位艺人的合作曲。'}
+3. **意图尊重**：如果用户指令中提到了具体的艺人、专辑或风格，请以此为绝对中心进行推荐，此时可以忽略上述的频率和多样性限制。`);
 
   const result = fragments.join('\n\n---\n\n');
   console.log(`[Context] TOTAL buildContext: ${Date.now() - t0}ms (${result.length} chars)`);

@@ -329,6 +329,7 @@ export default function PlayerPage() {
           dislikedPlays: getDislikedIds(),
           skipSignals: getSkipSignals(),
           replaySignals: getReplaySignals(),
+          queueTracks: player.state.playlist.map(t => `${t.name} - ${t.artist}`),
           prompt: requirement,
           djStyle,
           tasteOverride,

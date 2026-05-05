@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     dislikedPlays = [],
     skipSignals = [],
     replaySignals = [],
+    queueTracks = [],
     tasteOverride,
     djStyle,
   } = body;
@@ -61,25 +62,28 @@ export async function POST(request: Request) {
       };
 
       try {
-        // 1. Build context
+        // 1. Resolve user message first for intent detection
+        const userMessage = prompt
+          ? `请根据我的特定要求为我生成一个${count}首歌的歌单：${prompt}`
+          : `请为我生成一个${count}首歌的歌单，根据当前的时间和环境来选择合适的音乐`;
+
+        // 2. Build context
         const systemPrompt = await buildContext({
           recentPlays,
           likedPlays,
           dislikedPlays,
           skipSignals,
           replaySignals,
+          queueTracks,
           tasteOverride,
           djStyle,
+          userMessage,
         });
 
-        // 2. LLM call
-        const userMessage = prompt
-          ? `请根据我的特定要求为我生成一个${count}首歌的歌单：${prompt}`
-          : `请为我生成一个${count}首歌的歌单，根据当前的时间和环境来选择合适的音乐`;
-
+        // 3. LLM call
         const djResponse = await callLLM(systemPrompt, userMessage, [], 10000);
 
-        // 3. Push DJ message immediately — frontend plays TTS right away
+        // 4. Push DJ message immediately — frontend plays TTS right away
         send('dj_message', {
           say: djResponse.say,
           reason: djResponse.reason || '',
