@@ -12,7 +12,7 @@ async function ncmApi() {
   return api;
 }
 
-const NCM_TIMEOUT = 5000;
+const NCM_TIMEOUT = 3000;
 
 /**
  * Call an NCM API function with retry and timeout protection.
@@ -27,7 +27,7 @@ async function callNcm<T>(fn: () => Promise<T>): Promise<T> {
       ),
     ]);
     return result as T;
-  }, { retries: 1, delayMs: 1000 });
+  }, { retries: 0 });
 }
 
 export async function searchSongs(
@@ -106,6 +106,12 @@ export async function getLyric(id: number): Promise<{ lyric: string; tlyric: str
 /**
  * Search for a song and return a fully resolved Track with URL and lyrics.
  */
+/**
+ * In-memory lyric cache: filled by background fetches in resolveTrack.
+ * Keys are NCM song IDs.
+ */
+const lyricCache = new Map<number, { lyric: string; tlyric: string }>();
+
 export async function resolveTrack(query: string): Promise<Track | null> {
   const t0 = Date.now();
   const results = await searchSongs(query, 1);
@@ -115,20 +121,24 @@ export async function resolveTrack(query: string): Promise<Track | null> {
   }
 
   const match = results[0];
-  const [urlResult, lyricsResult] = await Promise.allSettled([
-    getSongUrl(match.id),
-    getLyric(match.id),
-  ]);
 
-  const url = urlResult.status === 'fulfilled' ? urlResult.value : null;
-  const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : { lyric: '', tlyric: '' };
-
+  // Only await URL — lyrics are non-blocking and loaded in background
+  const url = await getSongUrl(match.id);
   if (!url) {
     console.log(`[NCM] resolveTrack "${query}" → no URL (${Date.now() - t0}ms)`);
     return null;
   }
 
-  console.log(`[NCM] resolveTrack "${match.name}" → ${Date.now() - t0}ms`);
+  console.log(`[NCM] resolveTrack "${match.name}" → ${Date.now() - t0}ms (url only, lyric deferred)`);
+
+  // Kick off lyric fetch in background — don't await
+  getLyric(match.id)
+    .then((l) => lyricCache.set(match.id, l))
+    .catch(() => {});
+
+  // Return cached lyrics if already available (e.g. second call for same track)
+  const cachedLyric = lyricCache.get(match.id) ?? { lyric: '', tlyric: '' };
+
   return {
     id: match.id,
     name: match.name,
@@ -137,9 +147,17 @@ export async function resolveTrack(query: string): Promise<Track | null> {
     cover: match.album.picUrl,
     url,
     duration: match.duration,
-    lyric: lyrics.lyric,
-    tlyric: lyrics.tlyric,
+    lyric: cachedLyric.lyric,
+    tlyric: cachedLyric.tlyric,
   };
+}
+
+/**
+ * Read lyrics for a track that was previously resolved.
+ * Returns null if lyrics are not yet cached (still loading in background).
+ */
+export function getTrackLyricsFromCache(id: number): { lyric: string; tlyric: string } | null {
+  return lyricCache.get(id) ?? null;
 }
 
 /**

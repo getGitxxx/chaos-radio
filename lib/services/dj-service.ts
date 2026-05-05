@@ -87,16 +87,14 @@ export class DJService {
     const djResponse = await callLLM(systemPrompt, userMessage, [], 6000);
     console.log(`[DJService] callLLM: ${Date.now() - t2}ms`);
 
-    // 3. Resolve tracks
+    // 3 & 4. Resolve tracks and synthesize speech in parallel (no dependency between them)
     const t3 = Date.now();
     const playItems = Array.isArray(djResponse.play) ? djResponse.play.slice(0, count) : [];
-    const tracks = await this._resolveTracksWithIntros(playItems);
-    console.log(`[DJService] resolveTracks (${tracks.length}/${playItems.length}): ${Date.now() - t3}ms`);
-
-    // 4. Synthesize speech
-    const t4 = Date.now();
-    const ttsUrl = djResponse.say ? await synthesizeSpeech(djResponse.say) : null;
-    console.log(`[DJService] synthesizeSpeech: ${Date.now() - t4}ms`);
+    const [tracks, ttsUrl] = await Promise.all([
+      this._resolveTracksWithIntros(playItems),
+      djResponse.say ? synthesizeSpeech(djResponse.say) : Promise.resolve(null),
+    ]);
+    console.log(`[DJService] resolveTracks (${tracks.length}/${playItems.length}) + synthesizeSpeech: ${Date.now() - t3}ms`);
 
     console.log(`[DJService] TOTAL generatePlaylist: ${Date.now() - t0}ms`);
 

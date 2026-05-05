@@ -14,60 +14,65 @@ import DotMatrix from '../../components/DotMatrix';
 import s from './player.module.css';
 
 /**
- * Shared helper: fetch a playlist plan from /api/plan and apply to player.
- * Returns the plan data or throws on failure.
+ * Consume a streaming SSE response from POST /api/plan.
+ * Fires callbacks progressively as each event arrives.
  */
-async function fetchAndApplyPlaylist(
+async function streamPlaylist(
   body: Record<string, unknown>,
-  playerMethods: Pick<ReturnType<typeof useAudioPlayer>, 'setPlaylist' | 'playTTS'>,
-  playerRef: React.MutableRefObject<ReturnType<typeof useAudioPlayer> | null>,
   options: {
     signal?: AbortSignal;
-    clearCache?: boolean;
-    onDJMessage: (msg: string) => void;
-    onChatMessage: (msg: { role: 'dj'; content: string }) => void;
-    onAutoplayResult: (blocked: boolean) => void;
+    onDJMessage: (say: string, ttsUrl: string) => void;
+    onTrack: (track: Track, index: number) => void;
+    onDone: () => void;
+    onError: (msg: string) => void;
   }
-): Promise<PlaylistPlan | null> {
-  const t0 = Date.now();
+): Promise<void> {
   const res = await fetch('/api/plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     signal: options.signal,
   });
-  const json = await res.json();
-  console.log(`[Fetch] /api/plan response: ${Date.now() - t0}ms`);
-  if (!json.success || !json.data) {
-    throw new Error(json.error || 'API failed');
+
+  if (!res.ok || !res.body) {
+    options.onError(res.statusText || 'API request failed');
+    return;
   }
 
-  const data: PlaylistPlan = json.data;
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
 
-  if (data.tracks.length === 0) {
-    console.warn('[Fetch] API returned empty tracks, keeping current playlist');
-    options.onDJMessage(data.djMessage);
-    return data;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop() ?? '';
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        let eventName = 'message';
+        let dataStr = '';
+        for (const line of part.split('\n')) {
+          if (line.startsWith('event: ')) eventName = line.slice(7).trim();
+          else if (line.startsWith('data: ')) dataStr = line.slice(6);
+        }
+        if (!dataStr) continue;
+        try {
+          const data = JSON.parse(dataStr);
+          switch (eventName) {
+            case 'dj_message': options.onDJMessage(data.say as string, data.ttsUrl as string); break;
+            case 'track':      options.onTrack(data.track as Track, data.index as number); break;
+            case 'done':       options.onDone(); break;
+            case 'error':      options.onError(data.message as string); break;
+          }
+        } catch { /* malformed chunk */ }
+      }
+    }
+  } finally {
+    reader.releaseLock();
   }
-
-  if (options.clearCache) {
-    playerRef.current?.setPlaylist(data.tracks, 0);
-  } else {
-    playerMethods.setPlaylist(data.tracks, 0);
-  }
-
-  options.onDJMessage(data.djMessage);
-  options.onChatMessage({ role: 'dj', content: data.djMessage });
-
-  const tTTS = Date.now();
-  const ttsSuccess = await playerMethods.playTTS(
-    `/api/tts?text=${encodeURIComponent(data.djMessage)}`
-  );
-  console.log(`[Fetch] playTTS: ${Date.now() - tTTS}ms (success: ${ttsSuccess})`);
-  options.onAutoplayResult(!ttsSuccess);
-
-  localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
-  return data;
 }
 
 export default function PlayerPage() {
@@ -164,19 +169,16 @@ export default function PlayerPage() {
 
   const preloadRef = useRef(false);
 
-  const handlePlaylistNearEnd = useCallback(async (currentTrack: Track) => {
+  const handlePlaylistNearEnd = useCallback(async (_currentTrack: Track) => {
     if (preloadRef.current) return;
     preloadRef.current = true;
+    console.log('[Player] Playlist near-end: preloading next batch via SSE...');
 
-    console.log('[Player] Playlist near-end: preloading next batch...');
+    let djSay = '';
+    const newTracks: Track[] = [];
     try {
-      const playTTSStable = (url: string) => playerRef.current?.playTTS(url);
-      const addToPlaylistStable = (tracks: Track[]) => playerRef.current?.addToPlaylist(tracks);
-
-      const res = await fetch('/api/plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      await streamPlaylist(
+        {
           recentPlays: getRecentNames(),
           likedPlays: getLikedIds(),
           dislikedPlays: getDislikedIds(),
@@ -185,29 +187,36 @@ export default function PlayerPage() {
           prompt: '继续推荐下一批歌曲，保持当前的音乐风格和情绪连贯。',
           djStyle,
           tasteOverride,
-        })
-      });
-      const json = await res.json();
-      if (!json.success || !json.data) {
-        console.error('[Player] Preload failed:', json.error);
-        setDjMessage('下一批歌曲没信号，让我再试试...');
-        preloadRef.current = false;
-        return;
-      }
-
-      const data: PlaylistPlan = json.data;
-      addToPlaylistStable?.(data.tracks);
-      setDjMessage(data.djMessage);
-      setChatMessages(prev => [...prev, { role: 'dj', content: data.djMessage }]);
-      playTTSStable?.(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
-      localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
-      preloadRef.current = false;
+        },
+        {
+          onDJMessage: (say, ttsUrl) => {
+            djSay = say;
+            setDjMessage(say);
+            setChatMessages(prev => [...prev, { role: 'dj', content: say }]);
+            playerRef.current?.playTTS(ttsUrl);
+          },
+          onTrack: (track) => {
+            newTracks.push(track);
+            playerRef.current?.addToPlaylist([track]);
+          },
+          onDone: () => {
+            if (newTracks.length > 0) {
+              localStorage.setItem('chaos-radio-cache', JSON.stringify({ tracks: newTracks, djMessage: djSay }));
+            }
+            preloadRef.current = false;
+          },
+          onError: () => {
+            setDjMessage('下一批歌曲没信号，让我再试试...');
+            preloadRef.current = false;
+          },
+        }
+      );
     } catch (error) {
-      console.error('[Player] Preload error:', error);
+      console.error('[Player] Preload SSE error:', error);
       setDjMessage('下一批歌曲信号中断，但我会继续播放...');
       preloadRef.current = false;
     }
-  }, [getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
+  }, [getRecentNames, getLikedIds, getDislikedIds, getSkipSignals, getReplaySignals, djStyle, tasteOverride]);
 
   const player = useAudioPlayer({ onTrackNearEnd: handleTrackNearEnd, onPlaylistNearEnd: handlePlaylistNearEnd });
   playerRef.current = player;
@@ -304,16 +313,16 @@ export default function PlayerPage() {
     setLoadingStage('selecting');
     setDjMessage(requirement ? `正在为你挑选「${requirement}」相关的歌曲...` : 'DJ 正在选歌...');
 
-    const stage1Timer = setTimeout(() => {
-      setLoadingStage('resolving');
-      setDjMessage('正在解析曲目，准备串场词...');
-    }, 2000);
+    // Local state for this generation run (closure-scoped, reset each call)
+    let isFirstTrack = true;
+    let djSay = '';
+    const resolvedTracks: Track[] = [];
 
     try {
       const p = playerMethodsRef.current;
       if (!p) throw new Error('Player not ready');
 
-      await fetchAndApplyPlaylist(
+      await streamPlaylist(
         {
           recentPlays: getRecentNames(),
           likedPlays: getLikedIds(),
@@ -324,33 +333,51 @@ export default function PlayerPage() {
           djStyle,
           tasteOverride,
         },
-        p,
-        playerRef,
         {
-          clearCache: true,
-          onDJMessage: (msg) => { setDjMessage(msg); },
-          onChatMessage: (msg) => {
-            setChatMessages(prev => [...prev, msg]);
+          onDJMessage: (say, ttsUrl) => {
+            djSay = say;
+            setDjMessage(say);
+            setChatMessages(prev => [...prev, { role: 'dj', content: say }]);
             playedIntrosRef.current.clear();
             preloadRef.current = false;
+            setLoadingStage('resolving');
+            // Play TTS immediately; don't await — handle autoplay blocked asynchronously
+            p.playTTS(ttsUrl).then((success) => {
+              setAutoplayBlocked(!success);
+              if (!success) setDjMessage('点击播放按钮开始收听 🎧');
+            });
           },
-          onAutoplayResult: (blocked) => {
-            setAutoplayBlocked(blocked);
-            if (blocked) setDjMessage('点击播放按钮开始收听 🎧');
+          onTrack: (track) => {
+            resolvedTracks.push(track);
+            if (isFirstTrack) {
+              isFirstTrack = false;
+              // Replace playlist and start from first resolved track
+              p.setPlaylist([...resolvedTracks], 0);
+              setLoadingStage('ready');
+            } else {
+              // Append without interrupting current playback
+              p.addToPlaylist([track]);
+            }
+          },
+          onDone: () => {
+            if (resolvedTracks.length > 0) {
+              localStorage.setItem('chaos-radio-cache', JSON.stringify({ tracks: resolvedTracks, djMessage: djSay }));
+            }
+            if (requirement) setChatInput('');
+          },
+          onError: (msg) => {
+            console.error('[Player] streamPlaylist error:', msg);
+            setDjMessage('信号丢失，再试一次？');
           },
         }
       );
-
-      clearTimeout(stage1Timer);
-      if (requirement) setChatInput('');
     } catch (e) {
-      clearTimeout(stage1Timer);
       setDjMessage('信号丢失，再试一次？');
     } finally {
       setLoading(false);
       setLoadingStage('idle');
     }
-  }, [getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
+  }, [getRecentNames, getLikedIds, getDislikedIds, getSkipSignals, getReplaySignals, djStyle, tasteOverride]);
 
   const handleGeneratePlaylist = useCallback(async () => {
     player.unlockAudio();
@@ -430,11 +457,13 @@ export default function PlayerPage() {
           resolveFallbackUrls();
 
           const controller = new AbortController();
-          const initTimeout = setTimeout(() => controller.abort(), 12000);
+          const initTimeout = setTimeout(() => controller.abort(), 20000);
 
-          const tFetch = Date.now();
+          let isFirstInitTrack = true;
+          let initDjSay = '';
+          const initTracks: Track[] = [];
           try {
-            await fetchAndApplyPlaylist(
+            await streamPlaylist(
               {
                 recentPlays: getRecentNames(),
                 likedPlays: getLikedIds(),
@@ -445,28 +474,47 @@ export default function PlayerPage() {
                 djStyle,
                 tasteOverride,
               },
-              p,
-              playerRef,
               {
                 signal: controller.signal,
-                clearCache: true,
-                onDJMessage: (msg) => { setDjMessage(msg); },
-                onChatMessage: (msg) => {
-                  setChatMessages(prev => [...prev, msg]);
+                onDJMessage: (say, ttsUrl) => {
+                  initDjSay = say;
+                  setDjMessage(say);
+                  setChatMessages(prev => [...prev, { role: 'dj', content: say }]);
                   playedIntrosRef.current.clear();
                   preloadRef.current = false;
+                  p.playTTS(ttsUrl).then((success) => {
+                    setAutoplayBlocked(!success);
+                    if (!success) setDjMessage('点击播放按钮开始收听 🎧');
+                  });
                 },
-                onAutoplayResult: (blocked) => {
-                  setAutoplayBlocked(blocked);
-                  if (blocked) setDjMessage('点击播放按钮开始收听 🎧');
+                onTrack: (track) => {
+                  initTracks.push(track);
+                  if (isFirstInitTrack) {
+                    isFirstInitTrack = false;
+                    // Replace fallback playlist with first real track
+                    p.setPlaylist([...initTracks], 0);
+                    setLoading(false);
+                    setLoadingStage('idle');
+                  } else {
+                    p.addToPlaylist([track]);
+                  }
+                },
+                onDone: () => {
+                  if (initTracks.length > 0) {
+                    localStorage.setItem('chaos-radio-cache', JSON.stringify({ tracks: initTracks, djMessage: initDjSay }));
+                  }
+                  clearTimeout(initTimeout);
+                  console.log(`[Init] SSE done (${Date.now() - tInit}ms total)`);
+                },
+                onError: () => {
+                  clearTimeout(initTimeout);
+                  console.log('[Init] SSE failed, keeping fallback');
                 },
               }
             );
-            clearTimeout(initTimeout);
-            console.log(`[Init] Background fetch done (${Date.now() - tInit}ms total)`);
           } catch (e) {
             clearTimeout(initTimeout);
-            console.log('[Init] Background fetch failed, keeping fallback');
+            console.log('[Init] SSE fetch aborted, keeping fallback');
           }
         }
       } catch (e) {

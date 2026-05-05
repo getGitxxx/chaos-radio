@@ -75,7 +75,7 @@ middleware.ts           # Auth gate: cookie check on all non-public routes
 |----------|----------|-------|
 | `ACCESS_KEY` | Yes | Login access key |
 | `DEEPSEEK_API_KEY` | Yes | DeepSeek API key |
-| `DEEPSEEK_BASE_URL` | No | Default: https://api.deepseek.com |
+| `DEEPSEEK_BASE_URL` | No | Default: <https://api.deepseek.com> |
 | `DEEPSEEK_MODEL` | No | Default: deepseek-chat |
 | `EDGE_TTS_URL` | Yes | Edge-TTS service URL |
 | `EDGE_TTS_TOKEN` | No | Edge-TTS auth token |

@@ -353,6 +353,36 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
     }));
   }, []);
 
+  // Lazy load lyrics if missing
+  useEffect(() => {
+    const track = state.currentTrack;
+    if (!track || (track.lyric && track.lyric.length > 0)) return;
+
+    let isMounted = true;
+    const fetchLyrics = async () => {
+      try {
+        const res = await fetch(`/api/lyrics?id=${track.id}`);
+        const json = await res.json();
+        if (json.success && json.data && isMounted) {
+          const { lyric, tlyric } = json.data;
+          setState((prev) => {
+            if (prev.currentTrack?.id !== track.id) return prev;
+            return {
+              ...prev,
+              lyrics: parseLrc(lyric, tlyric),
+              currentTrack: { ...prev.currentTrack, lyric, tlyric },
+            };
+          });
+        }
+      } catch (e) {
+        console.error('[AudioPlayer] Failed to lazy-load lyrics:', e);
+      }
+    };
+
+    fetchLyrics();
+    return () => { isMounted = false; };
+  }, [state.currentTrack?.id]);
+
   // MediaSession API setup
   useEffect(() => {
     if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
