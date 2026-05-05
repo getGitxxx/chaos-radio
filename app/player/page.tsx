@@ -44,6 +44,12 @@ async function fetchAndApplyPlaylist(
 
   const data: PlaylistPlan = json.data;
 
+  if (data.tracks.length === 0) {
+    console.warn('[Fetch] API returned empty tracks, keeping current playlist');
+    options.onDJMessage(data.djMessage);
+    return data;
+  }
+
   if (options.clearCache) {
     playerRef.current?.setPlaylist(data.tracks, 0);
   } else {
@@ -403,6 +409,25 @@ export default function PlayerPage() {
           p.setPlaylist(FALLBACK_TRACKS, 0);
           setDjMessage('正在为您精选个性歌单...');
           setChatMessages([{ role: 'dj', content: '欢迎收听 ChaosRadio！正在为您生成专属推荐，先听点经典好歌吧。' }]);
+
+          const resolveFallbackUrls = async () => {
+            try {
+              const resolved = await Promise.all(
+                FALLBACK_TRACKS.map(async (t) => {
+                  try {
+                    const res = await fetch(`/api/resolve-url?id=${t.id}`);
+                    const json = await res.json();
+                    return { ...t, url: json.url || undefined };
+                  } catch { return t; }
+                })
+              );
+              const validTracks = resolved.filter(t => t.url);
+              if (validTracks.length > 0) {
+                p.setPlaylist(validTracks, 0, true);
+              }
+            } catch { }
+          };
+          resolveFallbackUrls();
 
           const controller = new AbortController();
           const initTimeout = setTimeout(() => controller.abort(), 12000);

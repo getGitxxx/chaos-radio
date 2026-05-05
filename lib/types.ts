@@ -103,31 +103,31 @@ export const FALLBACK_TRACKS: Track[] = [
   {
     id: 1341968063,
     name: 'Plastic Love',
-    artist: '竹内 まりや / 竹内玛莉亚',
-    url: 'https://music.163.com/song/media/outer/url?id=1341968063.mp3',
+    artist: '竹内 まりや',
+    album: 'VARIETY',
   },
   {
     id: 470794465,
     name: 'Fly Me To The Moon',
-    artist: 'Lisa Ono / 小野丽莎',
-    url: 'https://music.163.com/song/media/outer/url?id=470794465.mp3',
+    artist: 'Lisa Ono',
+    album: 'Best Collection',
   },
   {
     id: 27864648,
     name: 'Ride On Time',
     artist: '山下达郎',
-    url: 'https://music.163.com/song/media/outer/url?id=27864648.mp3',
+    album: 'RIDE ON TIME',
   },
   {
     id: 146915,
     name: 'Moonlight Shadow',
     artist: 'Groove Coverage',
-    url: 'https://music.163.com/song/media/outer/url?id=146915.mp3',
+    album: 'Covergirl',
   },
   {
     id: 5243582,
     name: '夜来香',
     artist: '邓丽君',
-    url: 'https://music.163.com/song/media/outer/url?id=5243582.mp3',
+    album: '邓丽君精选1',
   },
 ];
