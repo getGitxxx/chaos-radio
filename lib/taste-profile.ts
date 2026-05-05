@@ -47,8 +47,46 @@ interface CachedProfile {
 
 let memoryCache: CachedProfile | null = null;
 
-export async function getTasteProfile(data: TasteData): Promise<string> {
-  // Return empty if not enough data
+/**
+ * Read cached taste profile ONLY. Never triggers LLM — returns empty on miss.
+ * Safe to call in request path (/api/plan).
+ */
+export async function getCachedTasteProfile(data: TasteData): Promise<string> {
+  const totalItems = data.liked.length + data.disliked.length + data.favorites.length;
+  if (totalItems < 10) return '';
+
+  const newHash = hashInput(data);
+
+  if (memoryCache && memoryCache.hash === newHash) {
+    return memoryCache.profile;
+  }
+
+  try {
+    const { readFile } = await import('fs/promises');
+    const cachePath = '/tmp/chaos-radio-taste-profile.json';
+    const raw = await readFile(cachePath, 'utf-8');
+    const cached = JSON.parse(raw) as CachedProfile;
+    if (cached.hash === newHash) {
+      memoryCache = cached;
+      return cached.profile;
+    }
+    const likedDiff = Math.abs((cached.inputSize?.liked ?? 0) - data.liked.length);
+    const dislikedDiff = Math.abs((cached.inputSize?.disliked ?? 0) - data.disliked.length);
+    const favDiff = Math.abs((cached.inputSize?.favorites ?? 0) - data.favorites.length);
+    if (likedDiff + dislikedDiff + favDiff <= 5) {
+      memoryCache = cached;
+      return cached.profile;
+    }
+  } catch { }
+
+  return ''; // Cache miss — don't block the request
+}
+
+/**
+ * Generate taste profile via LLM AND cache the result.
+ * Heavy operation — call from background jobs only (/api/favorites, cron).
+ */
+export async function generateTasteProfile(data: TasteData): Promise<string> {
   const totalItems = data.liked.length + data.disliked.length + data.favorites.length;
   if (totalItems < 10) return '';
 

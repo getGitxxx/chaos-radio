@@ -4,7 +4,7 @@ import routines from '@/user/routines.md';
 import moodRules from '@/user/mood-rules.md';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
-import { getTasteProfile } from './taste-profile';
+import { getCachedTasteProfile } from './taste-profile';
 
 const DJ_STYLES: Record<string, string> = {
   '文艺范': '- 你是一个文艺范儿的 DJ，说话像诗人一样，善用隐喻和意象，语气温柔有深度',
@@ -59,18 +59,19 @@ export async function buildContext(options: {
   const dislikedPlays = options.dislikedPlays ?? [];
 
   let tasteProfile = '';
+  let favoritesSample: string[] = [];
   try {
     const tTaste = Date.now();
     const { sampleFavorites } = await import('./ncm');
-    const favorites = await sampleFavorites(50);
-    if (likedPlays.length + dislikedPlays.length + favorites.length >= 10) {
-      tasteProfile = await getTasteProfile({
+    favoritesSample = await sampleFavorites(50);
+    if (likedPlays.length + dislikedPlays.length + favoritesSample.length >= 10) {
+      tasteProfile = await getCachedTasteProfile({
         liked: likedPlays,
         disliked: dislikedPlays,
-        favorites,
+        favorites: favoritesSample,
       });
     }
-    console.log(`[Context] tasteProfile: ${Date.now() - tTaste}ms (${tasteProfile ? 'generated' : 'skipped'})`);
+    console.log(`[Context] tasteProfile: ${Date.now() - tTaste}ms (${tasteProfile ? 'hit' : 'miss'})`);
   } catch {
     // Taste profile is optional — falls back to raw data
   }
@@ -114,12 +115,10 @@ export async function buildContext(options: {
 
   // ⑥ User favorites (from NCM playlists)
   try {
-    const tFav = Date.now();
-    const { sampleFavorites } = await import('./ncm');
-    const favorites = await sampleFavorites(30);
-    console.log(`[Context] sampleFavorites: ${Date.now() - tFav}ms (${favorites.length} tracks)`);
-    if (favorites.length > 0) {
-      const favList = favorites.join('\n- ');
+    const favSlice = favoritesSample.slice(0, 30);
+    console.log(`[Context] favorites: ${Date.now() - t0}ms (${favSlice.length} tracks from cached sample)`);
+    if (favSlice.length > 0) {
+      const favList = favSlice.join('\n- ');
       fragments.push(
         `## 用户收藏歌单（随机采样）\n以下是用户在网易云音乐中收藏的部分歌曲。推荐歌曲时，优先从这个列表中选择，但也可以推荐风格相近的新歌。\n- ${favList}`
       );

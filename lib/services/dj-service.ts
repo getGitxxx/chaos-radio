@@ -84,7 +84,7 @@ export class DJService {
       ? `请根据我的特定要求为我生成一个${count}首歌的歌单：${prompt}`
       : `请为我生成一个${count}首歌的歌单，根据当前的时间和环境来选择合适的音乐`;
 
-    const djResponse = await callLLM(systemPrompt, userMessage, [], 8000);
+    const djResponse = await callLLM(systemPrompt, userMessage, [], 6000);
     console.log(`[DJService] callLLM: ${Date.now() - t2}ms`);
 
     // 3. Resolve tracks

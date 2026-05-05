@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchAndCacheFavorites, loadCachedFavorites } from '../../../lib/ncm';
+import { generateTasteProfile } from '../../../lib/taste-profile';
 
 /**
  * GET /api/favorites — Return cached favorites
@@ -31,6 +32,14 @@ export async function POST() {
 
   try {
     const { tracks, likedCount, playlistCount } = await fetchAndCacheFavorites(uid);
+
+    void generateTasteProfile({
+      liked: [],
+      disliked: [],
+      favorites: tracks.map(t => `${t.name} - ${t.artist}`),
+    }).then(profile => {
+      if (profile) console.log('[Favorites] Taste profile regenerated');
+    }).catch(e => console.error('[Favorites] Taste profile gen failed:', e.message));
 
     return NextResponse.json({
       success: true,
