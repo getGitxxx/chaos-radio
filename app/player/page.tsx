@@ -546,22 +546,11 @@ export default function PlayerPage() {
 
         {/* Player Section */}
         <div className={`${s.playerSection} ${s.z1}`}>
-          <div className={s.playerTopRow}>
+            <div className={s.playerTopRow}>
             <div className={s.trackMetaLg}>
               <div className={`${s.trackTitleLg} ${s.mono}`}>
                 {currentTrack ? `${currentTrack.name} - ${currentTrack.artist}` : 'No Signal'}
               </div>
-              {currentTrack && (
-                <button 
-                  className={`${s.likeBtn} ${isLiked(currentTrack.id) ? s.liked : ''}`} 
-                  onClick={() => toggleLike(currentTrack)}
-                  title={isLiked(currentTrack.id) ? '取消收藏' : '收藏这首'}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill={isLiked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                  </svg>
-                </button>
-              )}
               <div className={s.lyricRow}>
                 {activeLyricIndex !== -1 && lyrics && lyrics[activeLyricIndex] ? (
                   <div className={`${s.lyricText} ${s.mono} animate-fade-in`} key={activeLyricIndex}>
@@ -599,26 +588,39 @@ export default function PlayerPage() {
             </div>
 
             <div className={s.mainControlsCenter}>
-              <button className={s.ctrlBtnLg} onClick={() => player.prevTrack()}>
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
-              </button>
-              <button className={s.playBtnLg} onClick={() => player.togglePlay()}>
-                {isPlaying ? (
-                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zm8 0h4v16h-4z" /></svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                )}
-              </button>
-              <button className={s.ctrlBtnLg} onClick={() => player.nextTrack()}>
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
-              </button>
+              {/* Tier 1: Core Transport */}
+              <div className={s.coreTransport}>
+                <button className={s.ctrlBtnLg} onClick={() => player.prevTrack()}>
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
+                </button>
+                <button className={s.playBtnLg} onClick={() => player.togglePlay()}>
+                  {isPlaying ? (
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zm8 0h4v16h-4z" /></svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                  )}
+                </button>
+                <button className={s.ctrlBtnLg} onClick={() => player.nextTrack()}>
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
+                </button>
+              </div>
+
+              {/* Tier 2: Feedback & Actions */}
               {currentTrack && (
-                <div className={s.feedbackBtns}>
-                  <button className={`${s.feedbackBtn} ${s.skipBtn}`} onClick={() => { player.nextTrack(); setDjMessage('跳过这首，换个口味...'); }} title="跳过这首">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+                <div className={s.feedbackRow}>
+                  <button className={`${s.actionIcon} ${isDisliked(currentTrack.id) ? s.activeDislike : ''}`}
+                    onClick={() => { addDislike(currentTrack); player.nextTrack(); setDjMessage('这首不喜欢，换一首...'); }} title="不喜欢">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill={isDisliked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M10 15v4h3v-4h4l-5-5-5 5h4zm9-1V8l-4.5 4.5L14 12l.5.5L15 13l-4 4-4-4 .5-.5L8 12l-.5-.5L7 7v6h4z" /></svg>
                   </button>
-                  <button className={`${s.feedbackBtn} ${isDisliked(currentTrack.id) ? s.dislikedBtn : ''}`} onClick={() => { addDislike(currentTrack); player.nextTrack(); setDjMessage('这首不喜欢，换一首...'); }} title="不喜欢，换一首">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill={isDisliked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M10 15v4h3v-4h4l-5-5-5 5h4zm9-1V8l-4.5 4.5L14 12l.5.5L15 13l-4 4-4-4 .5-.5L8 12l-.5-.5L7 7v6h4z" /></svg>
+                  
+                  <button className={`${s.actionIcon} ${isLiked(currentTrack.id) ? s.activeLike : ''}`}
+                    onClick={() => toggleLike(currentTrack)} title={isLiked(currentTrack.id) ? '取消收藏' : '收藏这首'}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill={isLiked(currentTrack.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
+                  </button>
+                  
+                  <button className={`${s.actionIcon} ${s.skipBtn}`}
+                    onClick={() => { player.nextTrack(); setDjMessage('跳过这首，换个口味...'); }} title="跳过">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
                   </button>
                 </div>
               )}
