@@ -97,7 +97,6 @@ export default function PlayerPage() {
   const [dragTime, setDragTime] = useState(0);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const preloadRef = useRef(false);
 
   const [djStyle, setDjStyle] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -113,7 +112,54 @@ export default function PlayerPage() {
     return undefined;
   });
 
-  const player = useAudioPlayer({ onTrackNearEnd: handleTrackNearEnd });
+  const preloadRef = useRef(false);
+
+  const handlePlaylistNearEnd = useCallback(async (currentTrack: Track) => {
+    if (preloadRef.current) return;
+    preloadRef.current = true;
+
+    console.log('[Player] Playlist near-end: preloading next batch...');
+    try {
+      const playTTSStable = (url: string) => playerRef.current?.playTTS(url);
+      const addToPlaylistStable = (tracks: Track[]) => playerRef.current?.addToPlaylist(tracks);
+
+      const res = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recentPlays: getRecentNames(),
+          likedPlays: getLikedIds(),
+          dislikedPlays: getDislikedIds(),
+          skipSignals: getSkipSignals(),
+          replaySignals: getReplaySignals(),
+          prompt: '继续推荐下一批歌曲，保持当前的音乐风格和情绪连贯。',
+          djStyle,
+          tasteOverride,
+        })
+      });
+      const json = await res.json();
+      if (!json.success || !json.data) {
+        console.error('[Player] Preload failed:', json.error);
+        setDjMessage('下一批歌曲没信号，让我再试试...');
+        preloadRef.current = false;
+        return;
+      }
+
+      const data: PlaylistPlan = json.data;
+      addToPlaylistStable?.(data.tracks);
+      setDjMessage(data.djMessage);
+      setChatMessages(prev => [...prev, { role: 'dj', content: data.djMessage }]);
+      playTTSStable?.(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
+      localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
+      preloadRef.current = false;
+    } catch (error) {
+      console.error('[Player] Preload error:', error);
+      setDjMessage('下一批歌曲信号中断，但我会继续播放...');
+      preloadRef.current = false;
+    }
+  }, [getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
+
+  const player = useAudioPlayer({ onTrackNearEnd: handleTrackNearEnd, onPlaylistNearEnd: handlePlaylistNearEnd });
   playerRef.current = player;
 
   const { onTouchStart, onTouchEnd, gestureFeedback } = useTouchGestures({
@@ -161,53 +207,6 @@ export default function PlayerPage() {
       trackLastChangedAtRef.current = Date.now();
     }
   }, [currentTrack?.id, currentTrack?.name, recordPlay, recordSkip]);
-
-  // ---- Playlist near-end preloading ----
-  const handlePlaylistNearEnd = useCallback(async (currentTrack: Track) => {
-    if (preloadRef.current) return;
-    preloadRef.current = true;
-
-    console.log('[Player] Playlist near-end: preloading next batch...');
-    try {
-      const p = playerMethodsRef.current;
-      if (!p) return;
-
-      // Use stable refs for playback methods
-      const playTTSStable = (url: string) => playerRef.current?.playTTS(url);
-      const addToPlaylistStable = (tracks: Track[]) => playerRef.current?.addToPlaylist(tracks);
-
-      const res = await fetch('/api/plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recentPlays: getRecentNames(),
-          likedPlays: getLikedIds(),
-          dislikedPlays: getDislikedIds(),
-          skipSignals: getSkipSignals(),
-          replaySignals: getReplaySignals(),
-          prompt: '继续推荐下一批歌曲，保持当前的音乐风格和情绪连贯。',
-          djStyle,
-          tasteOverride,
-        })
-      });
-      const json = await res.json();
-      if (!json.success || !json.data) {
-        console.error('[Player] Preload failed:', json.error);
-        setDjMessage('下一批歌曲没信号，让我再试试...');
-        return;
-      }
-
-      const data: PlaylistPlan = json.data;
-      addToPlaylistStable?.(data.tracks);
-      setDjMessage(data.djMessage);
-      setChatMessages(prev => [...prev, { role: 'dj', content: data.djMessage }]);
-      playTTSStable?.(`/api/tts?text=${encodeURIComponent(data.djMessage)}`);
-      localStorage.setItem('chaos-radio-cache', JSON.stringify(data));
-    } catch (error) {
-      console.error('[Player] Preload error:', error);
-      setDjMessage('下一批歌曲信号中断，但我会继续播放...');
-    }
-  }, [getRecentNames, getLikedIds, getDislikedIds, djStyle, tasteOverride]);
 
   useEffect(() => {
     setMounted(true);
