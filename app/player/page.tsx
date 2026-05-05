@@ -393,54 +393,55 @@ export default function PlayerPage() {
           }
           console.log(`[Init] Cache path done (${Date.now() - tInit}ms total)`);
         } else {
-          console.log(`[Init] No cache, fetching from API (${Date.now() - tInit}ms to start)`);
+          console.log(`[Init] No cache, optimistic fallback (${Date.now() - tInit}ms to start)`);
           const p = playerMethodsRef.current;
-          if (p) {
-            const controller = new AbortController();
-            const initTimeout = setTimeout(() => controller.abort(), 8000);
+          if (!p) throw new Error('Player not ready');
 
-            try {
-              const tFetch = Date.now();
-              await fetchAndApplyPlaylist(
-                {
-                  recentPlays: getRecentNames(),
-                  likedPlays: getLikedIds(),
-                  dislikedPlays: getDislikedIds(),
-                  skipSignals: getSkipSignals(),
-                  replaySignals: getReplaySignals(),
-                  prompt: '',
-                  djStyle,
-                  tasteOverride,
+          setLoading(false);
+          setLoadingStage('idle');
+
+          p.setPlaylist(FALLBACK_TRACKS, 0);
+          setDjMessage('正在为您精选个性歌单...');
+          setChatMessages([{ role: 'dj', content: '欢迎收听 ChaosRadio！正在为您生成专属推荐，先听点经典好歌吧。' }]);
+
+          const controller = new AbortController();
+          const initTimeout = setTimeout(() => controller.abort(), 12000);
+
+          const tFetch = Date.now();
+          try {
+            await fetchAndApplyPlaylist(
+              {
+                recentPlays: getRecentNames(),
+                likedPlays: getLikedIds(),
+                dislikedPlays: getDislikedIds(),
+                skipSignals: getSkipSignals(),
+                replaySignals: getReplaySignals(),
+                prompt: '',
+                djStyle,
+                tasteOverride,
+              },
+              p,
+              playerRef,
+              {
+                signal: controller.signal,
+                clearCache: true,
+                onDJMessage: (msg) => { setDjMessage(msg); },
+                onChatMessage: (msg) => {
+                  setChatMessages(prev => [...prev, msg]);
+                  playedIntrosRef.current.clear();
+                  preloadRef.current = false;
                 },
-                p,
-                playerRef,
-                {
-                  signal: controller.signal,
-                  clearCache: true,
-                  onDJMessage: (msg) => { setDjMessage(msg); },
-                  onChatMessage: (msg) => {
-                    setChatMessages([msg]);
-                    playedIntrosRef.current.clear();
-                    preloadRef.current = false;
-                  },
-                  onAutoplayResult: (blocked) => {
-                    setAutoplayBlocked(blocked);
-                    if (blocked) setDjMessage('点击播放按钮开始收听 🎧');
-                  },
-                }
-              );
-              clearTimeout(initTimeout);
-              console.log(`[Init] fetchAndApplyPlaylist done (${Date.now() - tInit}ms total)`);
-            } catch (e) {
-              clearTimeout(initTimeout);
-              // Fallback: Play builtin tracks
-              setDjMessage('信号不稳定，为您播放经典推荐歌单。');
-              setChatMessages([{ 
-                  role: 'dj', 
-                  content: '连接超时，这是系统精选歌单，稍后将自动刷新新歌单。' 
-              }]);
-              p.setPlaylist(FALLBACK_TRACKS, 0);
-            }
+                onAutoplayResult: (blocked) => {
+                  setAutoplayBlocked(blocked);
+                  if (blocked) setDjMessage('点击播放按钮开始收听 🎧');
+                },
+              }
+            );
+            clearTimeout(initTimeout);
+            console.log(`[Init] Background fetch done (${Date.now() - tInit}ms total)`);
+          } catch (e) {
+            clearTimeout(initTimeout);
+            console.log('[Init] Background fetch failed, keeping fallback');
           }
         }
       } catch (e) {
