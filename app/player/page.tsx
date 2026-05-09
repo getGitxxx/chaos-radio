@@ -118,6 +118,8 @@ export default function PlayerPage() {
     }, 150);
   };
 
+  const [weather, setWeather] = useState<{ temp: number; description: string } | null>(null);
+  const [mood, setMood] = useState('CALM');
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState<'idle' | 'selecting' | 'resolving' | 'ready'>('idle');
   const [djMessage, setDjMessage] = useState('Always here, spinning through the night. What\'s next on your mind?');
@@ -270,6 +272,14 @@ export default function PlayerPage() {
   useEffect(() => {
     setMounted(true);
     const timer = setInterval(() => setTime(new Date()), 1000);
+    
+    // Fetch weather once on mount
+    fetch('/api/weather').then(res => res.json()).then(data => {
+      if (data.success && data.data) {
+        setWeather({ temp: data.data.temp, description: data.data.description });
+      }
+    }).catch(() => {});
+
     return () => clearInterval(timer);
   }, []);
 
@@ -342,6 +352,12 @@ export default function PlayerPage() {
             playedIntrosRef.current.clear();
             preloadRef.current = false;
             setLoadingStage('resolving');
+            
+            // Try to extract a mood keyword from the message or set a default
+            const moods = ['ENERGETIC', 'CALM', 'MELANCHOLY', 'CHILL', 'GROOVY', 'NOSTALGIC'];
+            const foundMood = moods.find(m => say.toUpperCase().includes(m)) || moods[Math.floor(Math.random() * moods.length)];
+            setMood(foundMood);
+
             // Play TTS immediately; don't await — handle autoplay blocked asynchronously
             p.playTTS(ttsUrl).then((success) => {
               setAutoplayBlocked(!success);
@@ -637,6 +653,12 @@ export default function PlayerPage() {
                 <DotMatrix text="ChaosRadio" size="sm" />
               </div>
               <div className={s.rightControls}>
+                {weather && (
+                  <div className={`${s.weatherBadge} ${s.mono}`}>
+                    {weather.temp}°C {weather.description}
+                  </div>
+                )}
+                <div className={`${s.moodBadge} ${s.mono}`}>{mood}</div>
                 <button className={s.iconBtn} onClick={() => router.push('/settings')} title="Settings" style={{ width: '32px', height: '32px' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="12" cy="12" r="3"></circle>
