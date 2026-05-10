@@ -424,8 +424,9 @@ async function doFetchAndCache(
   };
 }
 
-async function writeCacheIncremental() {}
-function writeFinalCache() {}
+// Stubs for functions that are no longer needed but still called in the loop
+async function writeCacheIncremental(..._args: unknown[]) {}
+function writeFinalCache(..._args: unknown[]) {}
 
 /**
  * Load cached favorites.
