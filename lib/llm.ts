@@ -66,7 +66,7 @@ export async function callLLMStream(
       stream: true,
     };
 
-    const stream = await client.chat.completions.create(createParams);
+    const stream = await client.chat.completions.create(createParams as any) as unknown as AsyncIterable<any>;
 
     let buf = '';
     let saySent = false;

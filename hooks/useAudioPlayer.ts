@@ -34,7 +34,7 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
     if (audioRef.current) {
       cb(audioRef.current.currentTime, audioRef.current.duration || 0, findActiveLyricIndex(stateRef.current.lyrics, audioRef.current.currentTime));
     }
-    return () => timeListenersRef.current.delete(cb);
+    return () => { timeListenersRef.current.delete(cb); };
   }, []);
 
   const [state, setState] = useState<AudioPlayerState>({
