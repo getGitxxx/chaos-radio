@@ -16,6 +16,9 @@ class MockAudio {
     if (src) this.src = src;
   }
 
+  removeAttribute() {}
+  load() {}
+
   addEventListener(event: string, callback: () => void) {
     if (!this.listeners[event]) this.listeners[event] = [];
     this.listeners[event].push(callback);

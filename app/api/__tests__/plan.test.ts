@@ -18,9 +18,9 @@ vi.mock('../../../lib/ncm', () => ({
   resolveTrack: (...args: unknown[]) => mockResolveTrack(...args),
 }));
 
-const mockCallLLM = vi.fn();
+const mockCallLLMStream = vi.fn();
 vi.mock('../../../lib/llm', () => ({
-  callLLM: (...args: unknown[]) => mockCallLLM(...args),
+  callLLMStream: (...args: unknown[]) => mockCallLLMStream(...args),
 }));
 
 const mockBuildContext = vi.fn();
@@ -41,11 +41,10 @@ beforeEach(() => {
 
 describe('POST /api/plan', () => {
   it('should return 400 when prompt is empty and recent/liked are empty', async () => {
-    mockCallLLM.mockResolvedValue({
-      say: 'Hello',
-      play: [],
-      reason: 'test',
-      segue: 'warm',
+    mockCallLLMStream.mockImplementation(async (systemPrompt, userMessage, history, callbacks) => {
+      if (callbacks.onDJMessageReady) {
+        callbacks.onDJMessageReady({ say: 'Hello', reason: 'test', segue: 'warm' });
+      }
     });
 
     const request = new Request('http://localhost/api/plan', {
@@ -55,21 +54,21 @@ describe('POST /api/plan', () => {
     });
 
     const response = await POST(request);
-    const data = await (response as any).json();
+    const text = await response.text();
 
-    expect(data.success).toBe(true);
-    expect(data.data).toBeDefined();
+    expect(text).toContain('event: dj_message');
+    expect(text).toContain('event: done');
   });
 
   it('should resolve tracks from LLM response', async () => {
-    mockCallLLM.mockResolvedValue({
-      say: 'Here are some tracks',
-      play: [
-        { query: 'Song A - Artist A', intro: 'Intro A' },
-        { query: 'Song B - Artist B', intro: 'Intro B' },
-      ],
-      reason: 'test',
-      segue: 'warm',
+    mockCallLLMStream.mockImplementation(async (systemPrompt, userMessage, history, callbacks) => {
+      if (callbacks.onDJMessageReady) {
+        callbacks.onDJMessageReady({ say: 'Here are some tracks', reason: 'test', segue: 'warm' });
+      }
+      if (callbacks.onTrackReady) {
+        callbacks.onTrackReady({ query: 'Song A - Artist A', intro: 'Intro A' });
+        callbacks.onTrackReady({ query: 'Song B - Artist B', intro: 'Intro B' });
+      }
     });
 
     mockResolveTrack
@@ -83,20 +82,17 @@ describe('POST /api/plan', () => {
     });
 
     const response = await POST(request);
-    const data = await (response as any).json();
+    const text = await response.text();
 
-    expect(data.success).toBe(true);
-    expect(data.data.tracks).toHaveLength(2);
-    expect(data.data.tracks[0].djIntro).toBe('Intro A');
-    expect(data.data.tracks[1].djIntro).toBe('Intro B');
+    expect(text).toContain('event: dj_message');
+    expect(text).toContain('event: track');
+    expect(text).toContain('Song A');
+    expect(text).toContain('Song B');
   });
 
   it('should handle LLM timeout gracefully', async () => {
-    mockCallLLM.mockResolvedValue({
-      say: '信号有点慢，让我再想想...',
-      play: [],
-      reason: 'LLM request timed out',
-      segue: 'warm',
+    mockCallLLMStream.mockImplementation(async (systemPrompt, userMessage, history, callbacks) => {
+      throw new Error('LLM timeout');
     });
 
     const request = new Request('http://localhost/api/plan', {
@@ -106,22 +102,20 @@ describe('POST /api/plan', () => {
     });
 
     const response = await POST(request);
-    const data = await (response as any).json();
+    const text = await response.text();
 
-    expect(data.success).toBe(true);
-    expect(data.data.tracks).toHaveLength(0);
-    expect(data.data.djMessage).toBe('信号有点慢，让我再想想...');
+    expect(text).toContain('event: error');
   });
 
   it('should skip failed track resolution', async () => {
-    mockCallLLM.mockResolvedValue({
-      say: 'Here are some tracks',
-      play: [
-        { query: 'Song A - Artist A', intro: 'Intro A' },
-        { query: 'Song B - Artist B', intro: 'Intro B' },
-      ],
-      reason: 'test',
-      segue: 'warm',
+    mockCallLLMStream.mockImplementation(async (systemPrompt, userMessage, history, callbacks) => {
+      if (callbacks.onDJMessageReady) {
+        callbacks.onDJMessageReady({ say: 'Here are some tracks', reason: 'test', segue: 'warm' });
+      }
+      if (callbacks.onTrackReady) {
+        callbacks.onTrackReady({ query: 'Song A - Artist A', intro: 'Intro A' });
+        callbacks.onTrackReady({ query: 'Song B - Artist B', intro: 'Intro B' });
+      }
     });
 
     mockResolveTrack
@@ -135,10 +129,10 @@ describe('POST /api/plan', () => {
     });
 
     const response = await POST(request);
-    const data = await (response as any).json();
+    const text = await response.text();
 
-    expect(data.success).toBe(true);
-    expect(data.data.tracks).toHaveLength(1); // Only Song A
-    expect(data.data.tracks[0].name).toBe('Song A');
+    expect(text).toContain('event: track');
+    expect(text).toContain('event: track_error');
+    expect(text).toContain('Song A');
   });
 });

@@ -1,6 +1,8 @@
 import type { Track, NCMSearchResult } from './types';
 import { withRetry } from './retry';
 
+import { unstable_cache } from 'next/cache';
+
 /**
  * NCM API wrapper for Vercel serverless functions.
  * Uses NeteaseCloudMusicApi as a direct dependency.
@@ -321,6 +323,14 @@ export async function getPlaylistTracks(
  * Soft timeout: if total time exceeds 45s, returns partial result from cache
  * rather than failing. Individual NCM calls have their own 8s timeout.
  */
+const _getCachedFavorites = unstable_cache(
+  async (uid: string | number) => {
+    return doFetchAndCache(uid, Date.now(), 45000);
+  },
+  ['chaos-radio-favorites-cache'],
+  { revalidate: 3600, tags: ['favorites'] }
+);
+
 export async function fetchAndCacheFavorites(uid: string | number): Promise<{
   tracks: FavoriteEntry[];
   likedCount: number;
@@ -328,37 +338,11 @@ export async function fetchAndCacheFavorites(uid: string | number): Promise<{
 }> {
   console.log('[NCM] Fetching favorites for user (UID redacted)');
 
-  const SOFT_DEADLINE = 45000; // 45s soft deadline (Vercel allows 60s)
-  const startTime = Date.now();
-
   try {
-    const result = await doFetchAndCache(uid, startTime, SOFT_DEADLINE);
-    return result;
+    return await _getCachedFavorites(uid);
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error('[NCM] fetchAndCacheFavorites failed:', errMsg);
-
-    // If timeout fired but data may have been cached, try loading it
-    if (errMsg.includes('deadline')) {
-      console.log('[NCM] Deadline reached, checking for partial cache...');
-      try {
-        const { readFile } = await import('fs/promises');
-        const cachePath = '/tmp/chaos-radio-favorites-cache.json';
-        const raw = await readFile(cachePath, 'utf-8');
-        const cached = JSON.parse(raw);
-        if (cached.tracks && cached.tracks.length > 0) {
-          console.log(`[NCM] Loaded ${cached.tracks.length} tracks from partial cache`);
-          return {
-            tracks: cached.tracks,
-            likedCount: cached.likedCount ?? 0,
-            playlistCount: cached.playlistCount ?? 0,
-          };
-        }
-      } catch {
-        // No partial cache available
-      }
-    }
-
     throw error;
   }
 }
@@ -432,9 +416,7 @@ async function doFetchAndCache(
 
   console.log(`[NCM] Total unique tracks: ${unique.length} (liked: ${likedCount}, from ${ownPlaylists.length} playlists)`);
 
-  // 5. Final cache write
-  writeFinalCache(uid, unique, likedCount, ownPlaylists.length);
-
+  // 5. We no longer write to /tmp directly, as unstable_cache handles it
   return {
     tracks: unique,
     likedCount,
@@ -442,65 +424,18 @@ async function doFetchAndCache(
   };
 }
 
-async function writeCacheIncremental(
-  uid: string | number,
-  tracks: FavoriteEntry[],
-  likedCount: number,
-  playlistBatchCount: number,
-) {
-  try {
-    const { writeFileSync } = await import('fs');
-    const cachePath = '/tmp/chaos-radio-favorites-cache.json';
-    const cacheData = {
-      uid,
-      fetchedAt: new Date().toISOString(),
-      count: tracks.length,
-      likedCount,
-      playlistCount: playlistBatchCount,
-      partial: true,
-      tracks,
-    };
-    writeFileSync(cachePath, JSON.stringify(cacheData, null, 2), 'utf-8');
-    console.log(`[NCM] Incremental cache: ${tracks.length} tracks`);
-  } catch {
-    // Non-critical
-  }
-}
-
-function writeFinalCache(
-  uid: string | number,
-  tracks: { name: string; artist: string }[],
-  likedCount: number,
-  playlistCount: number,
-) {
-  try {
-    const { writeFileSync } = require('fs');
-    const cachePath = '/tmp/chaos-radio-favorites-cache.json';
-    const cacheData = {
-      uid,
-      fetchedAt: new Date().toISOString(),
-      count: tracks.length,
-      likedCount,
-      playlistCount,
-      tracks,
-    };
-    writeFileSync(cachePath, JSON.stringify(cacheData, null, 2), 'utf-8');
-    console.log(`[NCM] Favorites cached to ${cachePath}`);
-  } catch (e) {
-    console.error('[NCM] Failed to write cache:', e);
-  }
-}
+async function writeCacheIncremental() {}
+function writeFinalCache() {}
 
 /**
- * Load cached favorites from /tmp. Returns empty array if no cache exists.
+ * Load cached favorites.
  */
 export async function loadCachedFavorites(): Promise<FavoriteEntry[]> {
   try {
-    const { readFile } = await import('fs/promises');
-    const cachePath = '/tmp/chaos-radio-favorites-cache.json';
-    const raw = await readFile(cachePath, 'utf-8');
-    const data = JSON.parse(raw);
-    return Array.isArray(data.tracks) ? data.tracks : [];
+    const uid = process.env.NCM_USER_ID;
+    if (!uid) return [];
+    const result = await _getCachedFavorites(uid);
+    return result.tracks;
   } catch {
     return [];
   }

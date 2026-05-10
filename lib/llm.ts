@@ -32,6 +32,82 @@ const DJ_OUTPUT_SCHEMA = `You MUST respond with valid JSON in this exact format:
 /**
  * Call DeepSeek to generate a DJ response with retry and timeout.
  */
+export async function callLLMStream(
+  systemPrompt: string,
+  userMessage: string,
+  history: { role: 'user' | 'assistant'; content: string }[] = [],
+  callbacks: {
+    onDJMessageReady?: (data: { say: string; reason: string; segue: string }) => void;
+    onTrackReady?: (item: { query: string; intro: string }) => void;
+  },
+  timeoutMs: number = 15000
+): Promise<void> {
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    {
+      role: 'system',
+      content: `${systemPrompt}\n\n${DJ_OUTPUT_SCHEMA}`,
+    },
+    ...history.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    })),
+    { role: 'user', content: userMessage },
+  ];
+
+  const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+
+  try {
+    const createParams: any = {
+      model,
+      messages,
+      temperature: 0.85,
+      max_tokens: 800,
+      response_format: { type: 'json_object' },
+      stream: true,
+    };
+
+    const stream = await client.chat.completions.create(createParams);
+
+    let buf = '';
+    let saySent = false;
+    let playItemsSent = 0;
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      buf += content;
+
+      if (!saySent && buf.includes('"play"')) {
+        const sayMatch = buf.match(/"say"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+        if (sayMatch) {
+          const sayStr = sayMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+          if (callbacks.onDJMessageReady) {
+            callbacks.onDJMessageReady({ say: sayStr, reason: '', segue: 'warm' });
+          }
+          saySent = true;
+        }
+      }
+
+      const itemRegex = /\{\s*"query"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"intro"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*\}/g;
+      let match;
+      let itemCount = 0;
+      while ((match = itemRegex.exec(buf)) !== null) {
+        itemCount++;
+        if (itemCount > playItemsSent) {
+          const query = match[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+          const intro = match[2].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+          if (callbacks.onTrackReady) {
+            callbacks.onTrackReady({ query, intro });
+          }
+          playItemsSent++;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[LLM Stream] Error:', error);
+    throw error;
+  }
+}
+
 export async function callLLM(
   systemPrompt: string,
   userMessage: string,

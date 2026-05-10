@@ -6,7 +6,6 @@ import { parseLrc, findActiveLyricIndex, LyricLine } from '../lib/lyric-utils';
 
 export interface AudioPlayerState {
   isPlaying: boolean;
-  currentTime: number;
   duration: number;
   volume: number;
   currentTrack: Track | null;
@@ -14,7 +13,6 @@ export interface AudioPlayerState {
   playlist: Track[];
   isTTSPlaying: boolean;
   lyrics: LyricLine[];
-  activeLyricIndex: number;
 }
 
 export interface AudioPlayerOptions {
@@ -29,9 +27,18 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
   const fadeIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const userVolumeRef = useRef<number>(1);
 
+  const timeListenersRef = useRef<Set<(time: number, duration: number, activeLyricIndex: number) => void>>(new Set());
+
+  const subscribeToTime = useCallback((cb: (time: number, duration: number, activeLyricIndex: number) => void) => {
+    timeListenersRef.current.add(cb);
+    if (audioRef.current) {
+      cb(audioRef.current.currentTime, audioRef.current.duration || 0, findActiveLyricIndex(stateRef.current.lyrics, audioRef.current.currentTime));
+    }
+    return () => timeListenersRef.current.delete(cb);
+  }, []);
+
   const [state, setState] = useState<AudioPlayerState>({
     isPlaying: false,
-    currentTime: 0,
     duration: 0,
     volume: 1,
     currentTrack: null,
@@ -39,7 +46,6 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
     playlist: [],
     isTTSPlaying: false,
     lyrics: [],
-    activeLyricIndex: -1,
   });
 
   const stateRef = useRef(state);
@@ -88,12 +94,15 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
     const handleTimeUpdate = () => {
       const currentTime = audio.currentTime;
       const duration = audio.duration || 0;
-      setState((prev) => ({
-        ...prev,
-        currentTime,
-        duration,
-        activeLyricIndex: findActiveLyricIndex(prev.lyrics, currentTime),
-      }));
+      
+      const currentS = stateRef.current;
+      const newActiveLyricIndex = findActiveLyricIndex(currentS.lyrics, currentTime);
+
+      if (currentS.duration !== duration) {
+        setState((prev) => ({ ...prev, duration }));
+      }
+      
+      timeListenersRef.current.forEach(cb => cb(currentTime, duration, newActiveLyricIndex));
 
       // Track near-end (15s remaining) — for DJ intro
       if (duration > 0 && duration - currentTime <= 15 && !nearEndTriggeredRef.current) {
@@ -151,9 +160,11 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
       audio.removeEventListener('pause', handlePause);
       ttsAudio.removeEventListener('ended', handleTTSEnded);
       audio.pause();
-      audio.src = '';
+      audio.removeAttribute('src');
+      audio.load();
       ttsAudio.pause();
-      ttsAudio.src = '';
+      ttsAudio.removeAttribute('src');
+      ttsAudio.load();
     };
   }, []);
 
@@ -204,10 +215,8 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
     setState((prev) => ({
       ...prev,
       currentTrack: track,
-      currentTime: 0,
       duration: 0,
       lyrics: track.lyric ? parseLrc(track.lyric, track.tlyric) : [],
-      activeLyricIndex: -1,
     }));
 
     if (autoPlay) {
@@ -260,26 +269,31 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
 
   const fadeVolume = useCallback((audio: HTMLAudioElement, targetVolume: number, durationMs: number = 1000) => {
     return new Promise<void>((resolve) => {
-      if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
+      if (fadeIntervalRef.current) cancelAnimationFrame(fadeIntervalRef.current as unknown as number);
 
       const startVolume = audio.volume;
-      const steps = 20;
-      const stepTime = durationMs / steps;
-      const volumeStep = (targetVolume - startVolume) / steps;
-      let currentStep = 0;
+      const startTime = performance.now();
 
-      fadeIntervalRef.current = setInterval(() => {
-        currentStep++;
-        let nextVol = startVolume + (volumeStep * currentStep);
+      const animate = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / durationMs, 1);
+        
+        // Easing function (easeOutQuad) for smoother ducking
+        const easeOutProgress = progress * (2 - progress);
+        
+        let nextVol = startVolume + ((targetVolume - startVolume) * easeOutProgress);
         nextVol = Math.max(0, Math.min(1, nextVol));
         audio.volume = nextVol;
 
-        if (currentStep >= steps) {
-          if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
+        if (progress < 1) {
+          fadeIntervalRef.current = requestAnimationFrame(animate) as unknown as NodeJS.Timeout;
+        } else {
           audio.volume = targetVolume;
           resolve();
         }
-      }, stepTime);
+      };
+
+      fadeIntervalRef.current = requestAnimationFrame(animate) as unknown as NodeJS.Timeout;
     });
   }, []);
 
@@ -431,5 +445,6 @@ export function useAudioPlayer(options?: AudioPlayerOptions) {
     playTTS,
     addToPlaylist,
     unlockAudio,
+    subscribeToTime,
   };
 }
