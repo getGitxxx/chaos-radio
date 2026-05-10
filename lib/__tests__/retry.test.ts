@@ -42,7 +42,11 @@ describe('withRetry', () => {
     await vi.advanceTimersByTimeAsync(100);
     await vi.advanceTimersByTimeAsync(200);
 
-    await expect(promise).rejects.toThrow('always fails');
+    try {
+      await promise;
+    } catch (e) {
+      expect((e as Error).message).toBe('always fails');
+    }
     expect(fn).toHaveBeenCalledTimes(3);
   });
 

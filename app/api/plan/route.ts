@@ -1,5 +1,5 @@
 import { buildContext } from '../../../lib/context';
-import { callLLM } from '../../../lib/llm';
+import { callLLMStream } from '../../../lib/llm';
 import { resolveTrack } from '../../../lib/ncm';
 import type { Track } from '../../../lib/types';
 
@@ -80,41 +80,53 @@ export async function POST(request: Request) {
           userMessage,
         });
 
-        // 3. LLM call
-        const djResponse = await callLLM(systemPrompt, userMessage, [], 15000);
+        // 3. LLM call & streaming
+        let trackIndex = 0;
+        let activePromises: Promise<void>[] = [];
 
-        // 4. Push DJ message immediately — frontend plays TTS right away
-        send('dj_message', {
-          say: djResponse.say,
-          reason: djResponse.reason || '',
-          segue: djResponse.segue || 'warm',
-          ttsUrl: `/api/tts?text=${encodeURIComponent(djResponse.say)}`,
-        });
-
-        // 4. Resolve all tracks in parallel; push each one as it completes
-        const playItems = (Array.isArray(djResponse.play) ? djResponse.play : []).slice(0, count);
-
-        await Promise.allSettled(
-          playItems.map(async (item: { query: string; intro: string }, index: number) => {
-            try {
-              const track: Track | null = await resolveTrack(item.query);
-              if (track) {
-                send('track', {
-                  index,
-                  track: { ...track, djIntro: item.intro || '' } satisfies Track,
-                });
-              } else {
-                send('track_error', { index, query: item.query });
-              }
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              console.error(`[Plan SSE] resolveTrack[${index}] "${item.query}" failed:`, msg);
-              send('track_error', { index, query: item.query });
+        await callLLMStream(
+          systemPrompt,
+          userMessage,
+          [],
+          {
+            onDJMessageReady: (data) => {
+              send('dj_message', {
+                say: data.say,
+                reason: data.reason || '',
+                segue: data.segue || 'warm',
+                ttsUrl: `/api/tts?text=${encodeURIComponent(data.say)}`,
+              });
+            },
+            onTrackReady: (item) => {
+              if (trackIndex >= count) return;
+              const currentIndex = trackIndex++;
+              
+              const resolvePromise = (async () => {
+                try {
+                  const track: Track | null = await resolveTrack(item.query);
+                  if (track) {
+                    send('track', {
+                      index: currentIndex,
+                      track: { ...track, djIntro: item.intro || '' } satisfies Track,
+                    });
+                  } else {
+                    send('track_error', { index: currentIndex, query: item.query });
+                  }
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  console.error(`[Plan SSE] resolveTrack[${currentIndex}] "${item.query}" failed:`, msg);
+                  send('track_error', { index: currentIndex, query: item.query });
+                }
+              })();
+              activePromises.push(resolvePromise);
             }
-          })
+          },
+          15000
         );
 
-        send('done', { total: playItems.length });
+        // Wait for all track resolutions to finish before sending 'done'
+        await Promise.all(activePromises);
+        send('done', { total: trackIndex });
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('[Plan SSE] Fatal error:', msg);

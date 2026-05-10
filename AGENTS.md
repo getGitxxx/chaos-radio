@@ -114,6 +114,17 @@ middleware.ts           # Auth gate: cookie check on all non-public routes
 
 **MANDATORY**: Read `DEV_CONVENTIONS.md` before any code change. It defines error handling, type safety, API route standards, audio rules, and anti-patterns for v2.0.
 
-## Deploy
+## Deploy & CI/CD Workflow
 
-Targeted for Vercel. Set all env vars in Vercel dashboard. `npm run build` must pass in production.
+Targeted for Vercel. Set all env vars in Vercel dashboard.
+
+**MANDATORY PRE-PUSH WORKFLOW (NEVER BYPASS):**
+1. Do **NOT** rely solely on `npm run test` to validate code safety. Vitest uses Vite/esbuild under the hood, which **strips out TypeScript types** and only runs JS logic. It will NOT catch function arity mismatches, missing props, or strict type errors.
+2. You **MUST** run `npm run build` or `npx tsc --noEmit` locally and ensure it passes cleanly **BEFORE** you commit and push to GitHub. Bypassing this will break the Vercel build.
+
+**VERCEL CLI AUTOMATION (AI USAGE):**
+You are an autonomous AI. Do NOT ask the user to open the Vercel web console to check errors.
+You must use the Vercel CLI directly to manage deployments:
+- Use `npx vercel ls` to check the deployment status and get the URL of the failing build.
+- Use `npx vercel logs <deployment-url>` to directly read the build and runtime logs.
+- If it says "Your codebase isn't linked", don't give up. The codebase is linked in the Vercel ecosystem; adjust your commands, check `.vercel/project.json`, or reproduce the build issue locally using `npm run build`.

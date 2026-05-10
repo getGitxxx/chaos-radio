@@ -246,8 +246,19 @@ export default function PlayerPage() {
     }
   }, [player]);
 
-  const { currentTrack, isPlaying, currentTime, duration, playlist: rawPlaylist, currentIndex, isTTSPlaying, lyrics, activeLyricIndex } = player.state || {};
+  const { currentTrack, isPlaying, duration, playlist: rawPlaylist, currentIndex, isTTSPlaying, lyrics } = player.state || {};
   const playlist = Array.isArray(rawPlaylist) ? rawPlaylist : [];
+
+  const [currentTime, setCurrentTime] = useState(0);
+  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
+
+  useEffect(() => {
+    if (!player) return;
+    return player.subscribeToTime((time, _duration, lyricIdx) => {
+      setCurrentTime(time);
+      setActiveLyricIndex(lyricIdx);
+    });
+  }, [player]);
 
   // Record play on track change, and skip on manual advance
   const lastTrackRef = useRef<number | null>(null);
