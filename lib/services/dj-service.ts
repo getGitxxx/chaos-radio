@@ -22,15 +22,23 @@ export interface BuildContextOptions {
   dislikedPlays?: string[];
   skipSignals?: string[];
   replaySignals?: string[];
+  queueTracks?: string[];
   mood?: string;
   tasteOverride?: string;
   djStyle?: string;
+  userMessage?: string;
 }
 
 export interface GeneratePlaylistOptions extends BuildContextOptions {
   prompt?: string;
   count?: number;
 }
+
+export type PlaylistStreamEvent =
+  | { type: 'dj_message'; say: string; reason: string; segue: string; ttsUrl: string | null }
+  | { type: 'track'; index: number; track: Track }
+  | { type: 'track_error'; index: number; query: string }
+  | { type: 'done'; total: number };
 
 export interface ChatWithDJOptions extends BuildContextOptions {
   message: string;
@@ -200,6 +208,57 @@ export class DJService {
     return {
       djMessage: djResponse.say,
     };
+  }
+
+  /**
+   * Generate playlist with stream callback.
+   * Used by: /api/plan
+   */
+  async generatePlaylistWithStream(
+    options: GeneratePlaylistOptions,
+    onEvent: (event: PlaylistStreamEvent) => void
+  ): Promise<void> {
+    const { prompt, count = 5, ...contextOptions } = options;
+
+    const userMessage = prompt
+      ? `请根据我的特定要求为我生成一个${count}首歌的歌单：${prompt}`
+      : `请为我生成一个${count}首歌的歌单，根据当前的时间和环境来选择合适的音乐`;
+
+    const systemPrompt = await buildContext({ ...contextOptions, userMessage });
+    const djResponse = await callLLM(systemPrompt, userMessage, [], 15000);
+
+    const ttsUrl = djResponse.say ? `/api/tts?text=${encodeURIComponent(djResponse.say)}` : null;
+    
+    onEvent({
+      type: 'dj_message',
+      say: djResponse.say,
+      reason: djResponse.reason || '',
+      segue: djResponse.segue || 'warm',
+      ttsUrl,
+    });
+
+    const playItems = (Array.isArray(djResponse.play) ? djResponse.play : []).slice(0, count);
+
+    await Promise.allSettled(
+      playItems.map(async (item: { query: string; intro: string }, index: number) => {
+        try {
+          const track = await resolveTrack(item.query);
+          if (track) {
+            onEvent({
+              type: 'track',
+              index,
+              track: { ...track, djIntro: item.intro || '' },
+            });
+          } else {
+            onEvent({ type: 'track_error', index, query: item.query });
+          }
+        } catch {
+          onEvent({ type: 'track_error', index, query: item.query });
+        }
+      })
+    );
+
+    onEvent({ type: 'done', total: playItems.length });
   }
 
   // ---- Private helpers ----

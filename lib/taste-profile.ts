@@ -45,7 +45,12 @@ interface CachedProfile {
   inputSize: { liked: number; disliked: number; favorites: number };
 }
 
-let memoryCache: CachedProfile | null = null;
+const CACHE_PATH = '/tmp/chaos-radio-taste-profile.json';
+const CACHE_TTL = 24 * 60 * 60 * 1000;
+
+function isCacheExpired(cached: CachedProfile): boolean {
+  return !cached.generatedAt || Date.now() - cached.generatedAt > CACHE_TTL;
+}
 
 /**
  * Read cached taste profile ONLY. Never triggers LLM — returns empty on miss.
@@ -57,29 +62,27 @@ export async function getCachedTasteProfile(data: TasteData): Promise<string> {
 
   const newHash = hashInput(data);
 
-  if (memoryCache && memoryCache.hash === newHash) {
-    return memoryCache.profile;
-  }
-
   try {
     const { readFile } = await import('fs/promises');
-    const cachePath = '/tmp/chaos-radio-taste-profile.json';
-    const raw = await readFile(cachePath, 'utf-8');
+    const raw = await readFile(CACHE_PATH, 'utf-8');
     const cached = JSON.parse(raw) as CachedProfile;
+    
+    if (isCacheExpired(cached)) {
+      return '';
+    }
+    
     if (cached.hash === newHash) {
-      memoryCache = cached;
       return cached.profile;
     }
     const likedDiff = Math.abs((cached.inputSize?.liked ?? 0) - data.liked.length);
     const dislikedDiff = Math.abs((cached.inputSize?.disliked ?? 0) - data.disliked.length);
     const favDiff = Math.abs((cached.inputSize?.favorites ?? 0) - data.favorites.length);
     if (likedDiff + dislikedDiff + favDiff <= 5) {
-      memoryCache = cached;
       return cached.profile;
     }
   } catch { }
 
-  return ''; // Cache miss — don't block the request
+  return '';
 }
 
 /**
@@ -91,29 +94,25 @@ export async function generateTasteProfile(data: TasteData): Promise<string> {
   if (totalItems < 10) return '';
 
   const newHash = hashInput(data);
-
-  // Check memory cache first
-  if (memoryCache && memoryCache.hash === newHash) {
-    return memoryCache.profile;
-  }
+  let existingCache: CachedProfile | null = null;
 
   // Check /tmp cache
   try {
-    const { readFile, writeFile } = await import('fs/promises');
-    const cachePath = '/tmp/chaos-radio-taste-profile.json';
-    const raw = await readFile(cachePath, 'utf-8');
-    const cached = JSON.parse(raw) as CachedProfile;
-    if (cached.hash === newHash) {
-      memoryCache = cached;
-      return cached.profile;
-    }
-    // Stale — but check if input only grew by <10 items (avoid unnecessary LLM calls)
-    const likedDiff = Math.abs((cached.inputSize?.liked ?? 0) - data.liked.length);
-    const dislikedDiff = Math.abs((cached.inputSize?.disliked ?? 0) - data.disliked.length);
-    const favDiff = Math.abs((cached.inputSize?.favorites ?? 0) - data.favorites.length);
-    if (likedDiff + dislikedDiff + favDiff <= 5) {
-      memoryCache = cached;
-      return cached.profile;
+    const { readFile } = await import('fs/promises');
+    const raw = await readFile(CACHE_PATH, 'utf-8');
+    existingCache = JSON.parse(raw) as CachedProfile;
+    
+    if (isCacheExpired(existingCache)) {
+      // Cache expired, proceed to regenerate
+    } else if (existingCache.hash === newHash) {
+      return existingCache.profile;
+    } else {
+      const likedDiff = Math.abs((existingCache.inputSize?.liked ?? 0) - data.liked.length);
+      const dislikedDiff = Math.abs((existingCache.inputSize?.disliked ?? 0) - data.disliked.length);
+      const favDiff = Math.abs((existingCache.inputSize?.favorites ?? 0) - data.favorites.length);
+      if (likedDiff + dislikedDiff + favDiff <= 5) {
+        return existingCache.profile;
+      }
     }
   } catch {
     // No cache yet or read error — proceed to generate
@@ -139,20 +138,17 @@ export async function generateTasteProfile(data: TasteData): Promise<string> {
       },
     };
 
-    memoryCache = cached;
-
     try {
       const { writeFile } = await import('fs/promises');
-      await writeFile('/tmp/chaos-radio-taste-profile.json', JSON.stringify(cached), 'utf-8');
-    } catch {
-      // Cache write failure is non-critical
+      await writeFile(CACHE_PATH, JSON.stringify(cached), 'utf-8');
+    } catch (e) {
+      console.error('[TasteProfile] Failed to write cache:', e);
     }
 
     return profile;
   } catch (error) {
     console.error('[TasteProfile] Generation failed:', error);
-    // Fall back to stale cache if LLM fails
-    return memoryCache?.profile ?? '';
+    return existingCache?.profile ?? '';
   }
 }
 
