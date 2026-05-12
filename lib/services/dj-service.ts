@@ -92,7 +92,7 @@ export class DJService {
       ? `请根据我的特定要求为我生成一个${count}首歌的歌单：${prompt}`
       : `请为我生成一个${count}首歌的歌单，根据当前的时间和环境来选择合适的音乐`;
 
-    const djResponse = await callLLM(systemPrompt, userMessage, [], 6000);
+    const djResponse = await callLLM(systemPrompt, userMessage, [], 25000);
     console.log(`[DJService] callLLM: ${Date.now() - t2}ms`);
 
     // 3 & 4. Resolve tracks and synthesize speech in parallel (no dependency between them)
@@ -135,7 +135,7 @@ export class DJService {
       }));
 
     // 3. Call LLM
-    const djResponse = await callLLM(systemPrompt, message, llmHistory, 8000);
+    const djResponse = await callLLM(systemPrompt, message, llmHistory, 25000);
 
     // 4. Resolve tracks if any
     const playQueries = Array.isArray(djResponse.play) ? djResponse.play.map((p) => p.query) : [];
@@ -172,7 +172,7 @@ export class DJService {
       ? `当前正在播放「${currentTrack}」，请推荐下一首歌，并给出一句简短的串场词`
       : `请推荐一首适合现在听的歌，并给出一句简短的串场词`;
 
-    const djResponse = await callLLM(systemPrompt, userMessage, [], 8000);
+    const djResponse = await callLLM(systemPrompt, userMessage, [], 25000);
 
     // 3. Resolve first track
     const trackQuery = Array.isArray(djResponse.play) && djResponse.play.length > 0 ? djResponse.play[0].query : '';
@@ -203,7 +203,7 @@ export class DJService {
     const artistStr = trackArtist ? `${trackArtist} 的` : '';
     const userMessage = `现在电台即将播放 ${artistStr}《${trackName}》。请用极简、有腔调的电台DJ口吻（1-2句话）来介绍这首歌，作为这首歌的前奏旁白。不要有任何多余的废话，直接说台词。`;
 
-    const djResponse = await callLLM(systemPrompt, userMessage, [], 8000);
+    const djResponse = await callLLM(systemPrompt, userMessage, [], 25000);
 
     return {
       djMessage: djResponse.say,
@@ -225,7 +225,7 @@ export class DJService {
       : `请为我生成一个${count}首歌的歌单，根据当前的时间和环境来选择合适的音乐`;
 
     const systemPrompt = await buildContext({ ...contextOptions, userMessage });
-    const djResponse = await callLLM(systemPrompt, userMessage, [], 15000);
+    const djResponse = await callLLM(systemPrompt, userMessage, [], 25000);
 
     const ttsUrl = djResponse.say ? `/api/tts?text=${encodeURIComponent(djResponse.say)}` : null;
     
@@ -237,7 +237,18 @@ export class DJService {
       ttsUrl,
     });
 
-    const playItems = (Array.isArray(djResponse.play) ? djResponse.play : []).slice(0, count);
+    let playItems = (Array.isArray(djResponse.play) ? djResponse.play : []).slice(0, count);
+
+    if (playItems.length === 0) {
+      console.warn('[DJService] LLM returned empty playlist, using fallback tracks');
+      playItems = [
+        { query: '周杰伦 - 晴天', intro: '一首经典的周氏情歌，带你回到青春岁月' },
+        { query: '朴树 - 平凡之路', intro: '人生是一场漫长的旅程，平凡中见伟大' },
+        { query: '陈奕迅 - 好久不见', intro: '那些年错过的人，是否还在你的记忆里' },
+        { query: '王菲 - 红豆', intro: '相思红豆，情意绵绵' },
+        { query: '许巍 - 蓝莲花', intro: '没有什么能够阻挡，你对自由的向往' },
+      ];
+    }
 
     await Promise.allSettled(
       playItems.map(async (item: { query: string; intro: string }, index: number) => {
