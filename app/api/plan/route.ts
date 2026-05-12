@@ -1,7 +1,4 @@
-import { buildContext } from '../../../lib/context';
-import { callLLM } from '../../../lib/llm';
-import { resolveTrack } from '../../../lib/ncm';
-import type { Track } from '../../../lib/types';
+import { DJService } from '../../../lib/services/dj-service';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -48,6 +45,7 @@ export async function POST(request: Request) {
   } = body;
 
   const encoder = new TextEncoder();
+  const djService = new DJService();
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -62,65 +60,51 @@ export async function POST(request: Request) {
       };
 
       try {
-        // 1. Resolve user message first for intent detection
-        const userMessage = prompt
-          ? `请根据我的特定要求为我生成一个${count}首歌的歌单：${prompt}`
-          : `请为我生成一个${count}首歌的歌单，根据当前的时间和环境来选择合适的音乐`;
-
-        // 2. Build context
-        const systemPrompt = await buildContext({
-          recentPlays,
-          likedPlays,
-          dislikedPlays,
-          skipSignals,
-          replaySignals,
-          queueTracks,
-          tasteOverride,
-          djStyle,
-          userMessage,
-        });
-
-        // 3. LLM call
-        const djResponse = await callLLM(systemPrompt, userMessage, [], 15000);
-
-        // 4. Push DJ message immediately — frontend plays TTS right away
-        send('dj_message', {
-          say: djResponse.say,
-          reason: djResponse.reason || '',
-          segue: djResponse.segue || 'warm',
-          ttsUrl: `/api/tts?text=${encodeURIComponent(djResponse.say)}`,
-        });
-
-        // 4. Resolve all tracks in parallel; push each one as it completes
-        const playItems = (Array.isArray(djResponse.play) ? djResponse.play : []).slice(0, count);
-
-        await Promise.allSettled(
-          playItems.map(async (item: { query: string; intro: string }, index: number) => {
-            try {
-              const track: Track | null = await resolveTrack(item.query);
-              if (track) {
-                send('track', {
-                  index,
-                  track: { ...track, djIntro: item.intro || '' } satisfies Track,
+        await djService.generatePlaylistWithStream(
+          {
+            prompt,
+            count,
+            recentPlays,
+            likedPlays,
+            dislikedPlays,
+            skipSignals,
+            replaySignals,
+            queueTracks,
+            tasteOverride,
+            djStyle,
+          },
+          (event) => {
+            switch (event.type) {
+              case 'dj_message':
+                send('dj_message', {
+                  say: event.say,
+                  reason: event.reason,
+                  segue: event.segue,
+                  ttsUrl: event.ttsUrl,
                 });
-              } else {
-                send('track_error', { index, query: item.query });
-              }
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              console.error(`[Plan SSE] resolveTrack[${index}] "${item.query}" failed:`, msg);
-              send('track_error', { index, query: item.query });
+                break;
+              case 'track':
+                send('track', { index: event.index, track: event.track });
+                break;
+              case 'track_error':
+                send('track_error', { index: event.index, query: event.query });
+                break;
+              case 'done':
+                send('done', { total: event.total });
+                break;
             }
-          })
+          }
         );
-
-        send('done', { total: playItems.length });
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('[Plan SSE] Fatal error:', msg);
         send('error', { message: 'Failed to generate playlist' });
       } finally {
-        try { controller.close(); } catch { /* already closed */ }
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
       }
     },
   });
@@ -130,7 +114,7 @@ export async function POST(request: Request) {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no', // disable Nginx/Vercel response buffering
+      'X-Accel-Buffering': 'no',
     },
   });
 }

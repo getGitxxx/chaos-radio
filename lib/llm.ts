@@ -51,14 +51,12 @@ export async function callLLM(
   ];
 
   const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-  console.log('[LLM] Calling', model, 'base:', process.env.DEEPSEEK_BASE_URL || 'default');
+  const totalLength = systemPrompt.length + userMessage.length + history.reduce((acc, m) => acc + m.content.length, 0);
   
-  // LOG FULL PROMPT FOR INVESTIGATION
-  console.log('--- [LLM FULL PROMPT START] ---');
-  messages.forEach((m, i) => {
-    console.log(`[${i}] ${m.role.toUpperCase()}:\n${m.content}\n`);
-  });
-  console.log('--- [LLM FULL PROMPT END] ---');
+  console.log('[LLM] Calling model:', model);
+  console.log('[LLM] Base URL:', process.env.DEEPSEEK_BASE_URL ? 'configured' : 'default');
+  console.log('[LLM] Prompt length:', totalLength, 'chars');
+  console.log('[LLM] History messages:', history.length);
 
   try {
     const raw = await withRetry(async () => {

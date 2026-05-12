@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getExpectedToken } from '@/lib/auth';
+import { rateLimit } from '@/lib/middleware/rate-limit';
 
 function timingSafeEquals(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -48,6 +49,22 @@ export async function middleware(request: NextRequest) {
     }
     // Page routes redirect to login
     return NextResponse.redirect(new URL('/', request.url));
+  }
+
+  // Rate limiting for authenticated API requests
+  if (pathname.startsWith('/api/')) {
+    const { allowed, retryAfter } = await rateLimit(request);
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Too many requests' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(retryAfter),
+          },
+        }
+      );
+    }
   }
 
   return NextResponse.next();
