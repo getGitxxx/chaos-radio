@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useAudioPlayer } from '../useAudioPlayer';
+import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 
 // Mock Audio
 class MockAudio {

@@ -385,7 +385,7 @@ refactor(lib): extract DJService from route handlers
 ### Step 0: 接任务 → 理解上下文
 
 1. **读相关代码** — 不要凭记忆写代码，先找到涉及的文件，用 `read_file` 读一遍
-2. **检查是否有既有约定** — 查看 `AGENTS.md` 的 Gotchas 和 Extension points
+2. **检查是否有既有约定** — 查看 [agents.md](./agents.md) 的 Gotchas 和 Extension points
 3. **确认依赖影响范围** — 改 API route → 检查 middleware 是否要放行；改类型 → 检查所有引用处
 
 ### Step 1: 规划 → 写计划再动手
@@ -424,9 +424,9 @@ npm run lint    # 不能有新的 lint 错误
 
 ### Step 5: 文档 → 保持同步
 
-- 新增了 API route → 更新 `AGENTS.md` 的架构概览
-- 新增了 env var → 更新 `AGENTS.md` 的环境变量表
-- 发现了新的坑 → 更新 `DEV_CONVENTIONS.md` 的反模式表
+- 新增了 API route → 更新 [agents.md](./agents.md) 的架构概览
+- 新增了 env var → 更新 [agents.md](./agents.md) 的环境变量表
+- 发现了新的坑 → 更新 [dev-conventions.md](./dev-conventions.md) 的反模式表
 
 ### ⚡ 流程速查卡
 

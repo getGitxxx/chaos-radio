@@ -12,7 +12,7 @@ describe('GET /api/health', () => {
     process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
     process.env.EDGE_TTS_URL = 'https://test-tts.example.com';
 
-    const { GET } = await import('../health/route');
+    const { GET } = await import('@/app/api/health/route');
     const response = await GET();
     const data = await response.json();
 
@@ -38,7 +38,7 @@ describe('GET /api/health', () => {
     delete process.env.DEEPSEEK_API_KEY;
     delete process.env.EDGE_TTS_URL;
 
-    const { GET } = await import('../health/route');
+    const { GET } = await import('@/app/api/health/route');
     const response = await GET();
     const data = await response.json();
 

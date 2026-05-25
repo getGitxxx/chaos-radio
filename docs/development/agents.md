@@ -112,7 +112,7 @@ middleware.ts           # Auth gate: cookie check on all non-public routes
 
 ## Development Conventions
 
-**MANDATORY**: Read `DEV_CONVENTIONS.md` before any code change. It defines error handling, type safety, API route standards, audio rules, and anti-patterns for v2.0.
+**MANDATORY**: Read [dev-conventions.md](./dev-conventions.md) before any code change. It defines error handling, type safety, API route standards, audio rules, and anti-patterns for v2.0.
 
 ## Deploy & CI/CD Workflow
 

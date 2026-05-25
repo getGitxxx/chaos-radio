@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { withRetry } from '../retry';
+import { withRetry } from '@/lib/retry';
 
 beforeEach(() => {
   vi.useFakeTimers();

@@ -1,28 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DJService } from '../services/dj-service';
+import { DJService } from '@/lib/services/dj-service';
 
 // Mock all dependencies
-vi.mock('../context', () => ({
+vi.mock('@/lib/context', () => ({
   buildContext: vi.fn().mockResolvedValue('mock context'),
 }));
 
-vi.mock('../llm', () => ({
+vi.mock('@/lib/llm', () => ({
   callLLM: vi.fn(),
 }));
 
-vi.mock('../ncm', () => ({
+vi.mock('@/lib/ncm', () => ({
   resolveTrack: vi.fn(),
   resolveTracks: vi.fn(),
 }));
 
-vi.mock('../tts', () => ({
+vi.mock('@/lib/tts', () => ({
   synthesizeSpeech: vi.fn().mockResolvedValue('/api/tts?text=hello'),
 }));
 
-const { buildContext } = await import('../context');
-const { callLLM } = await import('../llm');
-const { resolveTrack, resolveTracks } = await import('../ncm');
-const { synthesizeSpeech } = await import('../tts');
+const { buildContext } = await import('@/lib/context');
+const { callLLM } = await import('@/lib/llm');
+const { resolveTrack, resolveTracks } = await import('@/lib/ncm');
+const { synthesizeSpeech } = await import('@/lib/tts');
 
 beforeEach(() => {
   vi.clearAllMocks();

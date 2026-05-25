@@ -59,6 +59,21 @@ npx tsx scripts/analyze-taste.ts --skip-fetch
 3. Set environment variables in Vercel dashboard
 4. Deploy
 
+## Documentation
+
+Detailed documentation is organized under the [docs](docs/) directory:
+
+- **Development**:
+  - [Development Conventions](docs/development/dev-conventions.md) — Coding conventions, guidelines, and anti-patterns.
+  - [Agent Developer Guide](docs/development/agents.md) — Reference guide for AI agents and developers.
+- **Architecture**:
+  - [System Architecture Analysis](docs/architecture/architecture-analysis.md) — Context flow, service maps, and tech stack details.
+- **Deployment**:
+  - [Vercel Deployment Guide](docs/deployment/deploy.md) — Step-by-step production deployment on Vercel.
+- **Archive / History**:
+  - [Code Review v1.0 Report](docs/archive/code-review-v1.0.md) — Historical code audit findings.
+  - [Defect Repair Plan](docs/archive/defect-repair-plan.md) — History of defect remediation plans.
+
 ## Tech Stack
 
 - **Frontend**: Next.js (React)

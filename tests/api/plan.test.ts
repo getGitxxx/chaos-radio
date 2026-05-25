@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { POST } from '../plan/route';
+import { POST } from '@/app/api/plan/route';
 
 // Mock NextResponse
 vi.mock('next/server', () => ({
@@ -14,22 +14,22 @@ vi.mock('next/server', () => ({
 
 // Mock dependencies
 const mockResolveTrack = vi.fn();
-vi.mock('../../../lib/ncm', () => ({
+vi.mock('@/lib/ncm', () => ({
   resolveTrack: (...args: unknown[]) => mockResolveTrack(...args),
 }));
 
 const mockCallLLMStream = vi.fn();
-vi.mock('../../../lib/llm', () => ({
+vi.mock('@/lib/llm', () => ({
   callLLMStream: (...args: unknown[]) => mockCallLLMStream(...args),
 }));
 
 const mockBuildContext = vi.fn();
-vi.mock('../../../lib/context', () => ({
+vi.mock('@/lib/context', () => ({
   buildContext: (...args: unknown[]) => mockBuildContext(...args),
 }));
 
 const mockSynthesizeSpeech = vi.fn();
-vi.mock('../../../lib/tts', () => ({
+vi.mock('@/lib/tts', () => ({
   synthesizeSpeech: (...args: unknown[]) => mockSynthesizeSpeech(...args),
 }));
 
